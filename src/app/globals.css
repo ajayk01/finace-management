@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+}
+
+@layer base {
+  :root {
+    --background: 220 60% 97%; /* #F0F5FA - Very light blue-gray */
+    --foreground: 220 20% 25%; /* #333D4C - Dark grayish blue for text */
+
+    --card: 0 0% 100%; /* White cards for contrast */
+    --card-foreground: 220 20% 25%; /* Same as main foreground */
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 25%;
+
+    --primary: 217 91% 60%; /* #3B82F6 - Vibrant Blue */
+    --primary-foreground: 0 0% 100%; /* White */
+
+    --secondary: 220 30% 92%; /* #E3E8EF - Lighter gray-blue for secondary elements */
+    --secondary-foreground: 217 91% 60%; /* Primary color on secondary bg */
+
+    --muted: 220 20% 90%; /* #DCE1E8 - Muted backgrounds */
+    --muted-foreground: 220 10% 55%; /* #808A9B - Muted text */
+
+    --accent: 217 80% 70%; /* #7AA5F8 - Lighter blue for accents */
+    --accent-foreground: 220 20% 25%; /* Dark text on accent */
+
+    --destructive: 0 72% 51%; /* Standard destructive red */
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 20% 88%; /* #D5DCE6 - Borders */
+    --input: 220 30% 94%; /* #E8ECF1 - Input backgrounds */
+    --ring: 217 91% 65%; /* Focus rings, related to primary */
+    
+    --chart-1: 145 63% 42%; /* Green for Income / Profit / Revenue */
+    --chart-2: 0 72% 51%; /* Red for Expense / Loss */
+    --chart-3: 43 74% 66%;
+    --chart-4: 27 87% 67%;
+    --chart-5: 173 58% 39%;
+    --radius: 0.5rem;
+
+    /* Sidebar specific colors from image */
+    --sidebar-background: 220 16% 15%; /* #1F242D - Dark blue-gray */
+    --sidebar-foreground: 210 40% 96%; /* #F0F4F8 - Light gray */
+    --sidebar-primary: 217 91% 60%; /* #3B82F6 - Blue (active item bg) */
+    --sidebar-primary-foreground: 0 0% 100%; /* White (active item text) */
+    --sidebar-accent: 220 16% 25%; /* #333943 - Hover bg */
+    --sidebar-accent-foreground: 210 40% 98%; /* #F7FAFC - Hover text */
+    --sidebar-border: 220 16% 20%; /* #292E36 - Border within sidebar */
+    --sidebar-ring: 217 91% 65%; /* Focus ring */
+  }
+
+  .dark {
+    /* Keeping existing dark theme, though the image is light themed */
+    --background: 220 15% 10%; 
+    --foreground: 210 25% 90%; 
+
+    --card: 220 15% 15%; 
+    --card-foreground: 210 25% 90%;
+
+    --popover: 220 15% 10%;
+    --popover-foreground: 210 25% 90%;
+
+    --primary: 223 55% 55%; 
+    --primary-foreground: 220 15% 10%; 
+
+    --secondary: 220 15% 20%; 
+    --secondary-foreground: 210 25% 90%; 
+
+    --muted: 220 15% 20%;
+    --muted-foreground: 210 20% 60%;
+
+    --accent: 260 50% 65%; 
+    --accent-foreground: 220 15% 10%; 
+
+    --destructive: 0 60% 50%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 15% 25%;
+    --input: 220 15% 22%;
+    --ring: 223 55% 65%;
+
+    --chart-1: 145 50% 50%; /* Adjusted Green for Dark Mode */
+    --chart-2: 0 65% 55%; /* Adjusted Red for Dark Mode */
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+
+    --sidebar-background: 220 15% 8%; 
+    --sidebar-foreground: 210 25% 85%;
+    --sidebar-primary: 223 50% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 15% 18%;
+    --sidebar-accent-foreground: 210 25% 85%;
+    --sidebar-border: 220 15% 22%;
+    --sidebar-ring: 223 50% 70%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
