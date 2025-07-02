@@ -150,7 +150,7 @@ export function TransactionDialog({
                             "text-blue-600": tx.type === 'Investment' || tx.type === 'Transfer',
                           })}
                         >
-                          {tx.type === 'Income' ? '+' : tx.type === 'Expense' ? '-' : ''}
+                          {tx.type === 'Income' ? '+' : tx.type === 'Expense' ? '' : ''}
                           {formatCurrency(tx.amount)}
                         </TableCell>
                       </TableRow>
