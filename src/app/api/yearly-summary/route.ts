@@ -6,7 +6,6 @@ import { Client } from '@notionhq/client';
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const NOTION_YEARLY_SUMMARY_DB_ID = process.env.NOTION_YEARLY_SUMMARY_DB_ID;
-const NOTION_BANK_ACCOUNTS_DB_ID = process.env.NOTION_BANK_ACCOUNTS_DB_ID;
 
 const months = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
@@ -75,31 +74,6 @@ async function fetchYearlySummaryFromNotion(year: number) {
     }
 }
 
-
-/**
- * Fetches the sum of all bank account balances from Notion.
- */
-async function fetchTotalBankBalance() {
-  if (!NOTION_BANK_ACCOUNTS_DB_ID) {
-    console.warn("NOTION_BANK_ACCOUNTS_DB_ID is not set in environment variables.");
-    return 0;
-  }
-  try {
-    const response = await notion.databases.query({
-      database_id: NOTION_BANK_ACCOUNTS_DB_ID,
-    });
-    const totalBalance = response.results.reduce((sum, page) => {
-      const balanceProperty = (page as any).properties?.['Current Balance']?.["formula"];
-      const balance = balanceProperty?.number || 0;
-      return sum + balance;
-    }, 0);
-    return totalBalance;
-  } catch (error) {
-    console.error("Error fetching total bank balance from Notion:", error);
-    return 0;
-  }
-}
-
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
@@ -117,14 +91,10 @@ export async function GET(request: NextRequest) {
              return NextResponse.json({ error: "NOTION_YEARLY_SUMMARY_DB_ID is not configured in environment variables. Please add it to your .env file." }, { status: 500 });
         }
 
-        const [summaryData, totalBankBalance] = await Promise.all([
-            fetchYearlySummaryFromNotion(year),
-            fetchTotalBankBalance()
-        ]);
+        const summaryData = await fetchYearlySummaryFromNotion(year);
 
         return NextResponse.json({
             summaryData,
-            totalBankBalance,
         });
 
     } catch (error) {

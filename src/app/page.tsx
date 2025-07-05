@@ -146,7 +146,6 @@ export default function DashboardPage() {
 
   // Summary Chart & Netflow State
   const [apiSummaryData, setApiSummaryData] = useState<SummaryDataItem[]>([]);
-  const [totalBankBalance, setTotalBankBalance] = useState<number>(0);
   const [isSummaryLoading, setIsSummaryLoading] = useState<boolean>(true);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [selectedSummaryYear, setSelectedSummaryYear] = useState<number>(currentYear);
@@ -296,7 +295,6 @@ export default function DashboardPage() {
       const cacheKey = `summary-${selectedSummaryYear}`;
       if (dataCache.current[cacheKey]) {
         setApiSummaryData(dataCache.current[cacheKey].summaryData);
-        setTotalBankBalance(dataCache.current[cacheKey].totalBankBalance);
         return;
       }
       setIsSummaryLoading(true); setSummaryError(null);
@@ -306,10 +304,8 @@ export default function DashboardPage() {
         const data = await res.json();
         const summary = {
           summaryData: data.summaryData || [],
-          totalBankBalance: data.totalBankBalance || 0
         };
         setApiSummaryData(summary.summaryData);
-        setTotalBankBalance(summary.totalBankBalance);
         dataCache.current[cacheKey] = summary;
       } catch (error) {
         setSummaryError(error instanceof Error ? error.message : "An unknown error occurred");
@@ -477,14 +473,17 @@ export default function DashboardPage() {
     if (netFlows > 0) netFlowsColorClass = "text-green-600";
     else if (netFlows < 0) netFlowsColorClass = "text-red-600";
 
+    const hdfcAccount = apiBankAccounts.find(acc => acc.name.toLowerCase().includes('hdfc'));
+    const hdfcBankBalance = hdfcAccount?.balance || 0;
+
     return [
       { category: "Total Expense", amount: expenseForSelectedMonth, colorClassName: "text-red-600 font-medium" },
       { category: "Total Income", amount: incomeForSelectedMonth, colorClassName: "text-green-600 font-medium" },
       { category: "Total Investment", amount: investmentForSelectedMonth, colorClassName: "text-primary font-medium" },
-      { category: "Total Bank Balance", amount: totalBankBalance, colorClassName: "text-foreground font-medium" },
+      { category: "HDFC Bank Balance", amount: hdfcBankBalance, colorClassName: "text-foreground font-medium" },
       { category: "Total Netflows", amount: netFlows, colorClassName: `${netFlowsColorClass} font-medium` },
     ] as FinancialSnapshotItem[];
-  }, [selectedSummaryDetailMonth, apiSummaryData, totalBankBalance, apiMonthlyExpenses, selectedExpenseMonth, selectedExpenseYear, selectedSummaryYear]);
+  }, [selectedSummaryDetailMonth, apiSummaryData, apiBankAccounts, apiMonthlyExpenses, selectedExpenseMonth, selectedExpenseYear, selectedSummaryYear]);
 
   const renderError = (error: string | null, type: string) => {
     if (!error) return null;
