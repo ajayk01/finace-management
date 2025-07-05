@@ -116,13 +116,15 @@ async function fetchMonthlyExpensesFromNotion({
     if(categoryCache.size === 0) 
       {
         console.log("Category cache is empty, loading from Notion...");
-        loadCategoryCache();
+        await loadCategoryCache();
+        console.log(`Category cache loaded with ${categoryCache.size} entries`);
       }
 
     if(subCategoryCache.size === 0)
       {
         console.log("Sub Category cache is empty, loading from Notion...");
-        loadSubCategoryCache();
+        await loadSubCategoryCache();
+        console.log(`Sub Category cache loaded with ${subCategoryCache.size} entries`);
       }
     
     const response = await notion.databases.query({
@@ -132,10 +134,8 @@ async function fetchMonthlyExpensesFromNotion({
 
     const items = await Promise.all(
       response.results.map(async (page) => {
-        
-        
-        const prop = (page as any).properties;
-
+        let prop = (page as any).properties;
+        //console.log("Page properties: ", prop);
         const amount = Number(prop["Amount"]["number"])
         if (amount === 0) return null;
         const description =prop['Expense']['title'][0]?.['plain_text'] || 'No Description';
@@ -171,7 +171,8 @@ async function fetchMonthlyExpensesFromNotion({
         } as Transaction;
       })
     );
-
+    // console.log(`Fetched ${items.length} transactions from Notion for ${month} ${year}`);
+    // console.log("Items ", items);
     return items.filter(Boolean) as Transaction[];
   } catch (error) {
     console.error("Error fetching expenses from Notion:", error);

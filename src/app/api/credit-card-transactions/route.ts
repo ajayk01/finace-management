@@ -7,7 +7,6 @@ import { Client } from '@notionhq/client';
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const EXPENSE_DB_ID = process.env.EXPENSE_DB_ID;
 const INCOME_DB_ID = process.env.INCOME_DB_ID;
-const INVESTMENT_DB_ID = process.env.INVESTMENT_TRANS_DB_ID;
 
 interface Transaction {
     id: string;
@@ -17,91 +16,57 @@ interface Transaction {
     type: 'Income' | 'Expense' | 'Investment' | 'Other';
 }
 
-const monthMap: Record<string, number> = 
-{
-  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
-};
-function getFromToDates(month: string, year: number) {
-  const monthIndex = monthMap[month.toLowerCase()];
-
-    if (monthIndex === undefined) {
-        throw new Error("Invalid month provided. Please use full month names (e.g., 'Jan', 'February').");
-    }
-
-    const startDate = new Date(year, monthIndex, 1);
-    const endDate = new Date(year, monthIndex + 1, 0);
-
-    return { startDate, endDate };
-}
-
-async function fetchFromDatabase(
+async function fetchAllFromDatabase(
     databaseId: string | undefined, 
-    creditCardId: string, 
-    from: string, 
-    to: string, 
+    filter: any,
     type: Transaction['type'], 
-    propertyNames: { date: string, amount: string, description: string, relation: string }
+    propertyNames: { date: string, amount: string, description: string }
 ): Promise<Transaction[]> {
     if (!databaseId) {
-        // Silently fail if DB ID is not provided
         return [];
     }
 
+    const allTransactions: Transaction[] = [];
+    let hasMore = true;
+    let startCursor: string | undefined = undefined;
+
     try {
-        const response = await notion.databases.query({
-            database_id: databaseId,
-            filter: {
-                and: [
-                    {
-                        property: propertyNames.relation,
-                        relation: {
-                            contains: creditCardId,
-                        },
-                    },
-                    {
-                        property: propertyNames.date,
-                        date: {
-                            on_or_after: from,
-                        },
-                    },
-                    {
-                        property: propertyNames.date,
-                        date: {
-                            on_or_before: to,
-                        },
-                    }
-                ],
-            },
-        });
+        while (hasMore) {
+            const response = await notion.databases.query({
+                database_id: databaseId,
+                filter: filter,
+                start_cursor: startCursor,
+                page_size: 100, // Max page size
+            });
 
-        // Use a type guard to filter out any malformed pages before mapping
-        return response.results.map((page: any): Transaction => {
-            const properties = page.properties;
-            // Title properties can have different names, e.g., 'Expense' or 'Name'
-            const descriptionProp = properties[propertyNames.description]['title'][0]['plain_text'];
-            const amountProp = properties[propertyNames.amount]['number'];
-            const dateProp = properties[propertyNames.date]['date']?.['start'] || null;
+            const transactions = response.results.map((page: any): Transaction => {
+                const properties = page.properties;
+                const descriptionProp = properties[propertyNames.description]?.title[0]?.plain_text || "No description";
+                const amountProp = properties[propertyNames.amount]?.number ?? 0;
+                const dateProp = properties[propertyNames.date]?.date?.start || null;
 
+                let transactionType = type;
+                if (type === 'Expense' && descriptionProp.toLowerCase().includes('cc bill')) {
+                    transactionType = 'Income';
+                }
 
-            let transactionType = type;
-            // If it's an expense and the description is "CC bill", treat it as income.
-            if (type === 'Expense' && descriptionProp.toLowerCase() === 'cc bill') {
-                transactionType = 'Income';
-            }
-
-            return {
-                id: page.id,
-                date: dateProp,
-                description: descriptionProp,
-                amount: amountProp,
-                type: transactionType,
-            };
-        });
+                return {
+                    id: page.id,
+                    date: dateProp,
+                    description: descriptionProp,
+                    amount: amountProp,
+                    type: transactionType,
+                };
+            });
+            allTransactions.push(...transactions);
+            
+            hasMore = response.has_more;
+            startCursor = response.next_cursor ?? undefined;
+        }
     } catch (error) {
-        console.log(`Error fetching ${type} transactions from Notion (DB ID: ${databaseId}):`, error);
-        return []; // Return empty array on error to not fail the entire request
+        console.error(`Error fetching ${type} transactions from Notion (DB ID: ${databaseId}):`, error);
     }
+    return allTransactions;
 }
 
 
@@ -109,35 +74,37 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const creditCardId = searchParams.get('creditCardId');
-        const month = searchParams.get('month');
-        const year = searchParams.get('year');
 
         if (!process.env.NOTION_API_KEY) {
             return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
         }
-        if (!creditCardId || !month || !year) {
-            return NextResponse.json({ error: "bankAccountId, month, and year are required query parameters." }, { status: 400 });
+        if (!creditCardId) {
+            return NextResponse.json({ error: "creditCardId is a required query parameter." }, { status: 400 });
         }
 
-        const { startDate, endDate } = getFromToDates(month, parseInt(year, 10));
-        const from = startDate.toISOString().split('T')[0];
-        const to = endDate.toISOString().split('T')[0];
+        const twoYearsAgo = new Date();
+        twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+        const fromDate = twoYearsAgo.toISOString().split('T')[0];
+        
+        const [expenseTransactions, incomeTransactions] = await Promise.all([
+            // Fetch Expenses for the last 2 years
+            fetchAllFromDatabase(EXPENSE_DB_ID, {
+                and: [
+                    { property: 'Credit Card Account', relation: { contains: creditCardId } },
+                    { property: 'Date', date: { on_or_after: fromDate } },
+                ],
+            }, 'Expense', { date: 'Date', amount: 'Amount', description: 'Expense' }),
 
-        const [expenseTransactions, incomeTransactions, investmentTransactions] = await Promise.all([
-            // Fetch Expenses
-            fetchFromDatabase(EXPENSE_DB_ID, creditCardId, from, to, 'Expense', {
-                date: 'Date', amount: 'Amount', description: 'Expense', relation: 'Credit Card Account'
-            }),
-            // Fetch Incomes
-            fetchFromDatabase(INCOME_DB_ID, creditCardId, from, to, 'Income', {
-                date: 'Date', amount: 'Amount', description: 'Description', relation: 'Credit Card Account'
-            }),
-            // Fetch Investments
-            fetchFromDatabase(INVESTMENT_DB_ID, creditCardId, from, to, 'Investment', {
-                date: 'Investment Date', amount: 'Invested Amount', description: 'Description', relation: 'Bank Account'
-            })
+            // Fetch Incomes for the last 2 years
+            fetchAllFromDatabase(INCOME_DB_ID, {
+                and: [
+                    { property: 'Credit Card Account', relation: { contains: creditCardId } },
+                    { property: 'Date', date: { on_or_after: fromDate } },
+                ],
+            }, 'Income', { date: 'Date', amount: 'Amount', description: 'Description' })
         ]);
-        const allTransactions = [...expenseTransactions, ...incomeTransactions, ...investmentTransactions];
+
+        const allTransactions = [...expenseTransactions, ...incomeTransactions];
         
         allTransactions.sort((a, b) => {
             if (!a.date) return 1;

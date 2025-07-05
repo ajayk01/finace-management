@@ -109,13 +109,13 @@ async function fetchGroupedMonthlyExpensesFromNotion({
     if(categoryCache.size === 0) 
       {
         console.log("Category cache is empty, loading from Notion...");
-         loadCategoryCache();
+        await loadCategoryCache();
       }
 
     if(subCategoryCache.size === 0)
       {
         console.log("Sub Category cache is empty, loading from Notion...");
-        loadSubCategoryCache();
+        await loadSubCategoryCache();
       }
 
     const response = await notion.databases.query({
