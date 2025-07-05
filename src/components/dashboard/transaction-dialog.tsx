@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Transaction {
   id: string;
@@ -43,6 +44,10 @@ interface TransactionDialogProps {
   onLoadMore?: () => void;
   hasMore: boolean;
   isLoadingMore: boolean;
+  isExcludable?: boolean;
+  excludedIds?: Set<string>;
+  onToggleExclude?: (id: string) => void;
+  onClearExclusions?: () => void;
 }
 
 const formatDate = (dateString: string | null) => {
@@ -77,6 +82,10 @@ export function TransactionDialog({
   onLoadMore,
   hasMore,
   isLoadingMore,
+  isExcludable = false,
+  excludedIds,
+  onToggleExclude,
+  onClearExclusions,
 }: TransactionDialogProps) {
 
   const isMonthlySummary = React.useMemo(() =>
@@ -88,9 +97,19 @@ export function TransactionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[1200px] h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>{title || "Transactions"}</DialogTitle>
+          <div className="flex items-center justify-between pr-8">
+            <DialogTitle>{title || "Transactions"}</DialogTitle>
+            {isExcludable && excludedIds && excludedIds.size > 0 && onClearExclusions && (
+              <Button variant="outline" size="sm" onClick={onClearExclusions}>
+                Clear Selection ({excludedIds.size})
+              </Button>
+            )}
+          </div>
           <DialogDescription>
-            Showing the latest transactions.
+            {isExcludable
+              ? "Showing the latest transactions. Check items to exclude them from expense totals."
+              : "Showing the latest transactions."
+            }
           </DialogDescription>
         </DialogHeader>
         <div className="flex-grow overflow-hidden">
@@ -115,6 +134,7 @@ export function TransactionDialog({
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      {isExcludable && <TableHead className="w-12 text-center">Exclude</TableHead>}
                       <TableHead>Date</TableHead>
                       {isMonthlySummary ? (
                         <>
@@ -130,7 +150,17 @@ export function TransactionDialog({
                   </TableHeader>
                   <TableBody>
                     {transactions.map((tx) => (
-                      <TableRow key={tx.id}>
+                      <TableRow key={tx.id} data-state={excludedIds?.has(tx.id) ? 'selected' : undefined}>
+                        {isExcludable && (
+                          <TableCell className="text-center">
+                            <Checkbox
+                              id={`exclude-${tx.id}`}
+                              aria-label={`Exclude transaction ${tx.description}`}
+                              checked={excludedIds?.has(tx.id)}
+                              onCheckedChange={() => onToggleExclude?.(tx.id)}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell className="text-muted-foreground whitespace-nowrap">
                           {formatDate(tx.date)}
                         </TableCell>
