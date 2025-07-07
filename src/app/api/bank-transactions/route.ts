@@ -2,19 +2,20 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { Client } from '@notionhq/client';
+import exp from 'constants';
 
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const EXPENSE_DB_ID = process.env.EXPENSE_DB_ID;
 const INCOME_DB_ID = process.env.INCOME_DB_ID;
 const INVESTMENT_DB_ID = process.env.INVESTMENT_TRANS_DB_ID;
-
+const TRANSFER_DB_ID = process.env.TRANSFER_DB;
 interface Transaction {
     id: string;
     date: string | null;
     description: string;
     amount: number;
-    type: 'Income' | 'Expense' | 'Investment' | 'Other';
+    type: 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Other';
 }
 
 async function fetchAllFromDatabase(
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
         twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
         const fromDate = twoYearsAgo.toISOString().split('T')[0];
 
-        const [expenseTransactions, incomeTransactions, investmentTransactions] = await Promise.all([
+        const [expenseTransactions, expTranfer,incomeTransactions, incTransfer, investmentTransactions] = await Promise.all([
             // Fetch Expenses for the last 2 years
             fetchAllFromDatabase(EXPENSE_DB_ID, {
                 and: [
@@ -91,6 +92,13 @@ export async function GET(request: NextRequest) {
                     { property: 'Date', date: { on_or_after: fromDate } },
                 ],
             }, 'Expense', { date: 'Date', amount: 'Amount', description: 'Expense' }),
+
+            fetchAllFromDatabase(TRANSFER_DB_ID, {
+                and: [
+                    { property: 'From Account', relation: { contains: bankAccountId } },
+                    { property: 'Date', date: { on_or_after: fromDate } },
+                ],
+            }, 'Expense', { date: 'Date', amount: 'Amount', description: 'Transactions' }),
             
             // Fetch Incomes for the last 2 years
             fetchAllFromDatabase(INCOME_DB_ID, {
@@ -100,6 +108,13 @@ export async function GET(request: NextRequest) {
                 ],
             }, 'Income', { date: 'Date', amount: 'Amount', description: 'Description' }),
 
+             fetchAllFromDatabase(TRANSFER_DB_ID, {
+                and: [
+                    { property: 'To Account', relation: { contains: bankAccountId } },
+                    { property: 'Date', date: { on_or_after: fromDate } },
+                ],
+            }, 'Income', { date: 'Date', amount: 'Amount', description: 'Transactions' }),
+
             // Fetch Investments for the last 2 years
             fetchAllFromDatabase(INVESTMENT_DB_ID, {
                 and: [
@@ -108,8 +123,9 @@ export async function GET(request: NextRequest) {
                 ],
             }, 'Investment', { date: 'Investment Date', amount: 'Invested Amount', description: 'Description' })
         ]);
-
-        const allTransactions = [...expenseTransactions, ...incomeTransactions, ...investmentTransactions];
+        const allExpTrans = [...expenseTransactions, ...expTranfer];
+        const allIncTrans = [...incomeTransactions, ...incTransfer];
+        const allTransactions = [...allExpTrans, ...allIncTrans, ...investmentTransactions];
         
         allTransactions.sort((a, b) => {
             if (!a.date) return 1;

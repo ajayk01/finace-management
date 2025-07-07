@@ -177,10 +177,11 @@ export function TransactionDialog({
                           className={cn("text-right font-semibold whitespace-nowrap", {
                             "text-green-600": tx.type === 'Income',
                             "text-red-600": tx.type === 'Expense',
-                            "text-blue-600": tx.type === 'Investment' || tx.type === 'Transfer',
+                            "text-blue-600": tx.type === 'Investment',
+                            "text-black-600": tx.type === 'Transfer',
                           })}
                         >
-                          {tx.type === 'Income' ? '+' : tx.type === 'Expense' ? '' : ''}
+                          {tx.type === 'Income' ? '' : tx.type === 'Expense' ? '' : ''}
                           {formatCurrency(tx.amount)}
                         </TableCell>
                       </TableRow>
