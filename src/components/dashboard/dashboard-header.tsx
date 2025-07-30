@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
-import { Bell, LogOut, User, PlusCircle, MinusCircle, TrendingUp, BookCheck } from "lucide-react";
+import { LogOut, User, PlusCircle, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,47 +57,55 @@ export function DashboardHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
-      <h1 className="text-xl font-semibold md:text-2xl">Financial Dashboard</h1>
-      <div className="ml-auto flex items-center gap-2 md:gap-3">
-        <Button variant="outline" size="sm">
-            <MinusCircle className="mr-2 h-4 w-4" />
-            Add Expense
-        </Button>
-        <Button variant="outline" size="sm">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Add Income
-        </Button>
-        <Button variant="outline" size="sm">
-            <TrendingUp className="mr-2 h-4 w-4" />
-            Add Investment
-        </Button>
-        <Button variant="outline" size="sm">
-            <BookCheck className="mr-2 h-4 w-4" />
-            Settle Up
-        </Button>
-
-        <Button variant="ghost" size="icon" className="rounded-full">
-          <Bell className="h-5 w-5" />
-          <span className="sr-only">Toggle notifications</span>
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <User className="h-5 w-5" />
-              <span className="sr-only">User menu</span>
+    <>
+      <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
+        <h1 className="text-xl font-semibold md:text-2xl">Financial Dashboard</h1>
+        <div className="ml-auto flex items-center gap-2 md:gap-3">
+            <Button variant="outline" size="sm">
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Add Expense
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>{user ? user.username : 'My Account'}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              <span>Log out</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </header>
+            <Button variant="outline" size="sm">
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Add Income
+            </Button>
+            <Button variant="outline" size="sm">
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Add Investment
+            </Button>
+          
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                        More options <ChevronDown className="h-4 w-4" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuItem>Splitwise</DropdownMenuItem>
+                    <DropdownMenuItem>Pay CC bill</DropdownMenuItem>
+                    <DropdownMenuItem>Settle up</DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+
+
+            <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full">
+                <User className="h-5 w-5" />
+                <span className="sr-only">User menu</span>
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                <DropdownMenuLabel>{user ? user.username : 'My Account'}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Log out</span>
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+            </DropdownMenu>
+        </div>
+      </header>
+    </>
   );
 }
