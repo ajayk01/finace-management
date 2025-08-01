@@ -14,8 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { AddExpenseDialog } from './add-expense-dialog';
-import type { Category } from './add-expense-dialog';
-import type { SubCategory } from './add-expense-dialog';
+import type { Category, SubCategory, Account } from './add-expense-dialog';
 
 interface User {
   username: string;
@@ -24,9 +23,11 @@ interface User {
 interface DashboardHeaderProps {
   categories: Category[];
   subCategories: SubCategory[];
+  bankAccounts: Account[];
+  creditCards: Account[];
 }
 
-export function DashboardHeader({ categories, subCategories }: DashboardHeaderProps) {
+export function DashboardHeader({ categories, subCategories, bankAccounts, creditCards }: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
@@ -64,6 +65,11 @@ export function DashboardHeader({ categories, subCategories }: DashboardHeaderPr
       });
     }
   };
+
+  const combinedAccounts = [
+    ...bankAccounts.map(acc => ({ ...acc, type: "Bank" as "Bank" })),
+    ...creditCards.map(card => ({ ...card, type: "Credit Card" as "Credit Card" }))
+  ];
 
   return (
     <>
@@ -120,6 +126,7 @@ export function DashboardHeader({ categories, subCategories }: DashboardHeaderPr
         onOpenChange={setIsAddExpenseOpen}
         categories={categories}
         subCategories={subCategories}
+        accounts={combinedAccounts}
       />
     </>
   );

@@ -43,6 +43,7 @@ const expenseSchema = z.object({
   amount: z.coerce.number().min(0.01, 'Amount must be greater than 0.'),
   date: z.date({ required_error: 'A date is required.' }),
   description: z.string().min(1, 'Description is required.'),
+  accountId: z.string().min(1, 'Please select an account.'),
   categoryId: z.string().min(1, 'Category is required.'),
   subCategoryId: z.string().min(1, 'Sub-category is required.'),
   includeSplitwise: z.boolean().default(false),
@@ -61,6 +62,12 @@ export interface SubCategory {
   id: string;
   name: string;
   categoryId: string;
+}
+
+export interface Account {
+  id: string;
+  name: string;
+  type: 'Bank' | 'Credit Card';
 }
 
 // Mock data for Splitwise - replace with actual API calls later
@@ -83,9 +90,10 @@ interface AddExpenseDialogProps {
   onOpenChange: (open: boolean) => void;
   categories: Category[];
   subCategories: SubCategory[];
+  accounts: Account[];
 }
 
-export function AddExpenseDialog({ open, onOpenChange, categories, subCategories }: AddExpenseDialogProps) {
+export function AddExpenseDialog({ open, onOpenChange, categories, subCategories, accounts }: AddExpenseDialogProps) {
   const { toast } = useToast();
   const [filteredSubCategories, setFilteredSubCategories] = useState<SubCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -96,6 +104,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
     defaultValues: {
       amount: 0,
       description: '',
+      accountId: '',
       categoryId: '',
       subCategoryId: '',
       date: new Date(),
@@ -150,7 +159,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
 
   const handleGoToSplitwise = async () => {
     // Only validate the fields from the first step
-    const result = await form.trigger(["amount", "date", "description", "categoryId", "subCategoryId"]);
+    const result = await form.trigger(["amount", "date", "description", "accountId", "categoryId", "subCategoryId"]);
     if (result) {
       form.setValue('includeSplitwise', true);
       setStep(2);
@@ -239,6 +248,28 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
                       <FormMessage />
                     </FormItem>
                   )}
+                />
+                 <FormField
+                    control={form.control}
+                    name="accountId"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Paid From</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select a bank or credit card" />
+                            </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                            {accounts.map(acc => (
+                                <SelectItem key={acc.id} value={acc.id}>{acc.name} ({acc.type})</SelectItem>
+                            ))}
+                            </SelectContent>
+                        </Select>
+                        <FormMessage />
+                        </FormItem>
+                    )}
                 />
                 <FormField
                     control={form.control}
@@ -396,5 +427,3 @@ const CommandList = ({children}: {children: React.ReactNode}) => <div className=
 const CommandEmpty = ({children}: {children: React.ReactNode}) => <p className='py-6 text-center text-sm'>{children}</p>
 const CommandGroup = ({children}: {children: React.ReactNode}) => <div className='p-1'>{children}</div>
 const CommandItem = ({children, className, onSelect}: {children: React.ReactNode, className?: string, onSelect: () => void}) => <div onClick={onSelect} className={cn("relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent", className)}>{children}</div>
-
-    

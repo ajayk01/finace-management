@@ -507,6 +507,16 @@ export default function DashboardPage() {
       <DashboardHeader 
         categories={categories}
         subCategories={subCategories}
+        bankAccounts={apiBankAccounts.map(acc => ({
+          id: acc.id,
+          name: acc.name,
+          type: 'Bank' as const
+        }))}
+        creditCards={apiCreditCards.map(card => ({
+          id: card.id,
+          name: card.name,
+          type: 'Credit Card' as const
+        }))}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
