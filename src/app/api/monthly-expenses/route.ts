@@ -11,6 +11,7 @@ const EXPENSE_CATEGORY_DB_ID = "1c570d7fb20b813dbd11e369874aa147";
 const EXPENSES_DB_ID = process.env.EXPENSE_DB_ID;
 const categoryCache: Map<string, string> = new Map();
 const subCategoryCache: Map<string, string> = new Map();
+const subCategoryToCategoryMap: Map<string, string> = new Map(); // Maps subcategory ID to category ID
 // Interfaces for data structures
 interface Transaction {
     id: string;
@@ -76,9 +77,11 @@ async function loadSubCategoryCache()
   });
     response.results.forEach((page: any) => 
     {
-    const id = page.id;
-    const name = page.properties["Sub Category"]?.title?.[0]?.plain_text;
-    subCategoryCache.set(id, name);
+      const id = page.id;
+      const categoryId = page.properties["Category Name"]["relation"][0]["id"];
+      const name = page.properties["Sub Category"]?.title?.[0]?.plain_text;
+      subCategoryCache.set(id, name);
+      subCategoryToCategoryMap.set(id, categoryId);
   });
 }
 
@@ -116,13 +119,14 @@ async function fetchMonthlyExpensesFromNotion({
     if(categoryCache.size === 0) 
       {
         console.log("Category cache is empty, loading from Notion...");
-        loadCategoryCache();
+        await loadCategoryCache();
+
       }
 
     if(subCategoryCache.size === 0)
       {
         console.log("Sub Category cache is empty, loading from Notion...");
-        loadSubCategoryCache();
+        await loadSubCategoryCache();
       }
     
     const response = await notion.databases.query({
@@ -143,6 +147,7 @@ async function fetchMonthlyExpensesFromNotion({
         
         let subCategoryId = prop["Sub Category"]["relation"][0]?.["id"]
         let categoryId = prop["Category"]["relation"][0]?.["id"]
+                
         let categoryName = ""
         if(categoryId != undefined) 
         {
@@ -224,9 +229,19 @@ export async function GET(request: NextRequest) {
           if (!b.date) return 1;
           return new Date(a.date).getTime() - new Date(b.date).getTime();
         });
+
+    const categories = Array.from(categoryCache.entries()).map(([id, name]) => ({ id, name }));
+    const subCategories = Array.from(subCategoryCache.entries()).map(([id, name]) => {
+      const categoryId = subCategoryToCategoryMap.get(id) || '';
+      return { id, name, categoryId };
+    });
+
+
     return NextResponse.json({
       monthlyExpenses,
       rawTransactions,
+      categories,
+      subCategories
     });
   } catch (error) {
     console.error("Error in /api/monthly-expense:", error);

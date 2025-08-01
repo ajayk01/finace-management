@@ -13,15 +13,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { AddExpenseDialog } from './add-expense-dialog';
+import type { Category } from './add-expense-dialog';
+import type { SubCategory } from './add-expense-dialog';
 
 interface User {
   username: string;
 }
 
-export function DashboardHeader() {
+interface DashboardHeaderProps {
+  categories: Category[];
+  subCategories: SubCategory[];
+}
+
+export function DashboardHeader({ categories, subCategories }: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
+  const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
 
   useEffect(() => {
     async function fetchUser() {
@@ -36,7 +45,7 @@ export function DashboardHeader() {
       }
     }
     fetchUser();
-  }, []);
+  }, [toast]);
   
   const handleLogout = async () => {
     try {
@@ -61,7 +70,7 @@ export function DashboardHeader() {
       <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
         <h1 className="text-xl font-semibold md:text-2xl">Financial Dashboard</h1>
         <div className="ml-auto flex items-center gap-2 md:gap-3">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => setIsAddExpenseOpen(true)}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Add Expense
             </Button>
@@ -106,6 +115,12 @@ export function DashboardHeader() {
             </DropdownMenu>
         </div>
       </header>
+      <AddExpenseDialog 
+        open={isAddExpenseOpen} 
+        onOpenChange={setIsAddExpenseOpen}
+        categories={categories}
+        subCategories={subCategories}
+      />
     </>
   );
 }

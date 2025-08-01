@@ -9,6 +9,7 @@ import { MonthlyMoneyTable, type FinancialSnapshotItem } from "@/components/dash
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog"; // Import new component
 import { AlertCircle } from "lucide-react";
 import { useState, useMemo, useEffect, useRef } from 'react';
+import type { Category, SubCategory } from "@/components/dashboard/add-expense-dialog";
 
 const monthOptions = [
   { value: "jan", label: "January" },
@@ -129,6 +130,8 @@ export default function DashboardPage() {
   const [selectedExpenseMonth, setSelectedExpenseMonth] = useState<string>(currentMonthValue);
   const [selectedExpenseYear, setSelectedExpenseYear] = useState<number>(currentYear);
   const [excludedExpenseIds, setExcludedExpenseIds] = useState<Set<string>>(new Set());
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
 
   // Income State
   const [apiMonthlyIncome, setApiMonthlyIncome] = useState<ExpenseItem[]>([]);
@@ -230,6 +233,8 @@ export default function DashboardPage() {
         if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
         const data = await res.json();
         const rawTransactions = data.rawTransactions || [];
+        setCategories(data.categories || []);
+        setSubCategories(data.subCategories || []);
         setRawMonthlyExpenses(rawTransactions);
         setExcludedExpenseIds(new Set()); // Reset on month change
         dataCache.current[cacheKey] = { rawTransactions };
@@ -499,7 +504,10 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col min-h-screen w-full">
-      <DashboardHeader />
+      <DashboardHeader 
+        categories={categories}
+        subCategories={subCategories}
+      />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div>
