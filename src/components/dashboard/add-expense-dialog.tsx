@@ -160,14 +160,61 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
 
   const onSubmit = async (values: ExpenseFormValues) => {
     setIsLoading(true);
-    console.log('Submitting expense:', values);
-    await new Promise(resolve => setTimeout(resolve, 1500)); 
-    setIsLoading(false);
-    toast({
-      title: 'Expense Added',
-      description: `The new expense of ${values.amount} has been recorded. ${values.includeSplitwise ? 'It will also be added to Splitwise.' : ''}`,
-    });
-    handleClose();
+    
+    const selectedAccount = accounts.find(acc => acc.id === values.accountId);
+    if (!selectedAccount) {
+        toast({ variant: "destructive", title: "Error", description: "Selected account not found." });
+        setIsLoading(false);
+        return;
+    }
+
+    const payload: any = {
+        amount: values.amount,
+        date: format(values.date, 'yyyy-MM-dd'),
+        description: values.description,
+        account: {
+            id: values.accountId,
+            type: selectedAccount.type,
+        },
+        categoryId: values.categoryId,
+        subCategoryId: values.subCategoryId,
+        includeSplitwise: values.includeSplitwise
+    };
+    
+    if (values.includeSplitwise) {
+        payload.splitwiseGroupId = values.splitwiseGroupId;
+        payload.splitwiseUserIds = values.splitwiseUserIds;
+        payload.splitwiseGroupName = splitwiseGroups.find(g => g.id === values.splitwiseGroupId)?.name;
+    }
+
+    try {
+        const response = await fetch('/api/add-expense', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Failed to add expense.');
+        }
+
+        toast({
+            title: 'Expense Added',
+            description: `The expense "${values.description}" has been successfully recorded.`,
+        });
+        handleClose();
+
+    } catch (error) {
+        toast({
+            variant: "destructive",
+            title: 'Submission Failed',
+            description: error instanceof Error ? error.message : "An unknown error occurred.",
+        });
+    } finally {
+        setIsLoading(false);
+    }
   };
   
   const handleUserMultiSelect = (userId: string) => {
