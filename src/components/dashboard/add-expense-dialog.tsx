@@ -39,19 +39,26 @@ import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 
-const expenseSchema = z.object({
+const expenseSchemaBase = z.object({
   amount: z.coerce.number().min(0.01, 'Amount must be greater than 0.'),
   date: z.date({ required_error: 'A date is required.' }),
   description: z.string().min(1, 'Description is required.'),
   accountId: z.string().min(1, 'Please select an account.'),
   categoryId: z.string().min(1, 'Category is required.'),
-  subCategoryId: z.string().min(1, 'Sub-category is required.'),
+  subCategoryId: z.string().optional(), // Make optional initially
   includeSplitwise: z.boolean().default(false),
   splitwiseGroupId: z.string().optional(),
   splitwiseUserIds: z.array(z.string()).optional(),
 });
 
-type ExpenseFormValues = z.infer<typeof expenseSchema>;
+
+interface AddExpenseDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  categories: Category[];
+  subCategories: SubCategory[];
+  accounts: Account[];
+}
 
 export interface Category {
   id: string;
@@ -85,19 +92,30 @@ const splitwiseUsers = [
 ];
 
 
-interface AddExpenseDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  categories: Category[];
-  subCategories: SubCategory[];
-  accounts: Account[];
-}
-
 export function AddExpenseDialog({ open, onOpenChange, categories, subCategories, accounts }: AddExpenseDialogProps) {
   const { toast } = useToast();
   const [filteredSubCategories, setFilteredSubCategories] = useState<SubCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
+
+  // Dynamically create the refined schema inside the component
+  const expenseSchema = expenseSchemaBase.refine(
+    (data) => {
+      const relatedSubCategories = subCategories.filter(sc => sc.categoryId === data.categoryId);
+      // If there are sub-categories for the selected category, then subCategoryId must be selected.
+      if (relatedSubCategories.length > 0) {
+        return !!data.subCategoryId && data.subCategoryId.length > 0;
+      }
+      // If there are no sub-categories, this validation passes.
+      return true;
+    },
+    {
+      message: 'Sub-category is required.',
+      path: ['subCategoryId'],
+    }
+  );
+
+  type ExpenseFormValues = z.infer<typeof expenseSchema>;
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
@@ -119,10 +137,13 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
 
   useEffect(() => {
     if (selectedCategoryId) {
-      setFilteredSubCategories(
-        subCategories.filter((sc) => sc.categoryId === selectedCategoryId)
-      );
+      const relatedSubCategories = subCategories.filter((sc) => sc.categoryId === selectedCategoryId);
+      setFilteredSubCategories(relatedSubCategories);
       form.setValue('subCategoryId', '');
+       // Re-validate when category changes
+      if (form.formState.isSubmitted) {
+        form.trigger('subCategoryId');
+      }
     } else {
       setFilteredSubCategories([]);
     }
@@ -299,10 +320,10 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
                     render={({ field }) => (
                         <FormItem>
                         <FormLabel>Expense Sub-category</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value} disabled={!selectedCategoryId}>
+                        <Select onValueChange={field.onChange} value={field.value} disabled={!selectedCategoryId || filteredSubCategories.length === 0}>
                             <FormControl>
                             <SelectTrigger>
-                                <SelectValue placeholder="Select a sub-category" />
+                                <SelectValue placeholder={filteredSubCategories.length === 0 ? "No sub-categories available" : "Select a sub-category" }/>
                             </SelectTrigger>
                             </FormControl>
                             <SelectContent>
