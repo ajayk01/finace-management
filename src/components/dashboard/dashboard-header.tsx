@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { AddExpenseDialog } from './add-expense-dialog';
-import type { Category, SubCategory, Account, SplitwiseGroup } from './add-expense-dialog';
+import type { Category, SubCategory, Account } from './add-expense-dialog';
 
 interface User {
   username: string;
@@ -25,10 +25,9 @@ interface DashboardHeaderProps {
   subCategories: SubCategory[];
   bankAccounts: Account[];
   creditCards: Account[];
-  splitwiseGroups: SplitwiseGroup[];
 }
 
-export function DashboardHeader({ categories, subCategories, bankAccounts, creditCards, splitwiseGroups }: DashboardHeaderProps) {
+export function DashboardHeader({ categories, subCategories, bankAccounts, creditCards }: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
@@ -128,7 +127,6 @@ export function DashboardHeader({ categories, subCategories, bankAccounts, credi
         categories={categories}
         subCategories={subCategories}
         accounts={combinedAccounts}
-        splitwiseGroups={splitwiseGroups}
       />
     </>
   );

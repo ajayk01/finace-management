@@ -32,7 +32,7 @@ import {
 } from '@/components/ui/select';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Users } from 'lucide-react';
+import { CalendarIcon, Users, Loader2, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -60,7 +60,6 @@ interface AddExpenseDialogProps {
   categories: Category[];
   subCategories: SubCategory[];
   accounts: Account[];
-  splitwiseGroups: SplitwiseGroup[];
 }
 
 export interface Category {
@@ -92,11 +91,16 @@ export interface SplitwiseGroup {
 }
 
 
-export function AddExpenseDialog({ open, onOpenChange, categories, subCategories, accounts, splitwiseGroups }: AddExpenseDialogProps) {
+export function AddExpenseDialog({ open, onOpenChange, categories, subCategories, accounts }: AddExpenseDialogProps) {
   const { toast } = useToast();
   const [filteredSubCategories, setFilteredSubCategories] = useState<SubCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
+  
+  // State for Splitwise
+  const [splitwiseGroups, setSplitwiseGroups] = useState<SplitwiseGroup[]>([]);
+  const [isSplitwiseLoading, setIsSplitwiseLoading] = useState(false);
+  const [splitwiseError, setSplitwiseError] = useState<string | null>(null);
   const [splitwiseUsers, setSplitwiseUsers] = useState<SplitwiseUser[]>([]);
 
   // Dynamically create the refined schema inside the component
@@ -243,9 +247,120 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
     const result = await form.trigger(["amount", "date", "description", "accountId", "categoryId", "subCategoryId"]);
     if (result) {
       form.setValue('includeSplitwise', true);
+      
+      // Fetch splitwise data only if it hasn't been fetched yet
+      if(splitwiseGroups.length === 0 && !isSplitwiseLoading) {
+          setIsSplitwiseLoading(true); setSplitwiseError(null);
+          try {
+              const res = await fetch('/api/splitwise');
+              if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch Splitwise data');
+              const data = await res.json();
+              setSplitwiseGroups(data.groups || []);
+          } catch (error) {
+              setSplitwiseError(error instanceof Error ? error.message : "An unknown error occurred");
+          } finally {
+              setIsSplitwiseLoading(false);
+          }
+      }
       setStep(2);
     }
   }
+
+  const renderSplitwiseContent = () => {
+    if (isSplitwiseLoading) {
+      return (
+        <div className="flex items-center justify-center p-8 space-x-2 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span>Loading Splitwise groups...</span>
+        </div>
+      );
+    }
+
+    if (splitwiseError) {
+      return (
+         <div className="text-red-600 flex items-center justify-center p-4 bg-red-50 rounded-md my-4">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            Error: {splitwiseError}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4 rounded-md border p-4">
+          <FormField
+              control={form.control}
+              name="splitwiseGroupId"
+              render={({ field }) => (
+                  <FormItem>
+                  <FormLabel>Splitwise Group</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                      <SelectTrigger>
+                          <SelectValue placeholder="Select a Splitwise group" />
+                      </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                      {splitwiseGroups.map(group => (
+                          <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
+                      ))}
+                      </SelectContent>
+                  </Select>
+                  <FormMessage />
+                  </FormItem>
+              )}
+          />
+          <FormItem>
+              <FormLabel>Split with</FormLabel>
+              <Popover>
+                  <PopoverTrigger asChild>
+                  <FormControl>
+                      <Button
+                      variant="outline"
+                      className="w-full justify-start font-normal"
+                      disabled={!selectedSplitwiseGroupId}
+                      >
+                      <Users className="mr-2 h-4 w-4" />
+                      {selectedSplitwiseUsers.length > 0
+                          ? `${selectedSplitwiseUsers.length} user(s) selected`
+                          : 'Select users'}
+                      </Button>
+                  </FormControl>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                      <ScrollArea className="h-48">
+                          <div className="p-2">
+                            {splitwiseUsers.length > 0 ? (
+                                splitwiseUsers.map((user) => (
+                                <div
+                                    key={user.id}
+                                    onClick={() => handleUserMultiSelect(user.id)}
+                                    className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent"
+                                >
+                                    <Checkbox
+                                        className="mr-2"
+                                        checked={selectedSplitwiseUsers.includes(user.id)}
+                                    />
+                                    {user.name}
+                                </div>
+                                ))
+                            ) : (
+                                <p className='py-6 text-center text-sm text-muted-foreground'>No users found.</p>
+                            )}
+                          </div>
+                      </ScrollArea>
+                  </PopoverContent>
+              </Popover>
+              <div className="pt-2">
+                  {selectedSplitwiseUsers.map(id => {
+                      const user = splitwiseUsers.find(u => u.id === id);
+                      return <Badge key={id} variant="secondary" className="mr-1 mb-1">{user?.name}</Badge>
+                  })}
+              </div>
+              <FormMessage />
+          </FormItem>
+      </div>
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -399,81 +514,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
               </div>
             )}
 
-            {step === 2 && (
-                <div className="space-y-4 rounded-md border p-4">
-                    <FormField
-                        control={form.control}
-                        name="splitwiseGroupId"
-                        render={({ field }) => (
-                            <FormItem>
-                            <FormLabel>Splitwise Group</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                <FormControl>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select a Splitwise group" />
-                                </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                {splitwiseGroups.map(group => (
-                                    <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
-                                ))}
-                                </SelectContent>
-                            </Select>
-                            <FormMessage />
-                            </FormItem>
-                        )}
-                    />
-                    <FormItem>
-                        <FormLabel>Split with</FormLabel>
-                        <Popover>
-                            <PopoverTrigger asChild>
-                            <FormControl>
-                                <Button
-                                variant="outline"
-                                className="w-full justify-start font-normal"
-                                disabled={!selectedSplitwiseGroupId}
-                                >
-                                <Users className="mr-2 h-4 w-4" />
-                                {selectedSplitwiseUsers.length > 0
-                                    ? `${selectedSplitwiseUsers.length} user(s) selected`
-                                    : 'Select users'}
-                                </Button>
-                            </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[300px] p-0" align="start">
-                                <ScrollArea className="h-48">
-                                    <div className="p-2">
-                                        {splitwiseUsers.length > 0 ? (
-                                            splitwiseUsers.map((user) => (
-                                            <div
-                                                key={user.id}
-                                                onClick={() => handleUserMultiSelect(user.id)}
-                                                className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent transition-colors"
-                                            >
-                                                <Checkbox
-                                                    className="mr-2"
-                                                    checked={selectedSplitwiseUsers.includes(user.id)}
-                                                />
-                                                {user.name}
-                                            </div>
-                                            ))
-                                        ) : (
-                                            <p className='py-6 text-center text-sm text-muted-foreground'>No users found.</p>
-                                        )}
-                                    </div>
-                                </ScrollArea>
-                            </PopoverContent>
-                        </Popover>
-                        <div className="pt-2">
-                            {selectedSplitwiseUsers.map(id => {
-                                const user = splitwiseUsers.find(u => u.id === id);
-                                return <Badge key={id} variant="secondary" className="mr-1 mb-1">{user?.name}</Badge>
-                            })}
-                        </div>
-                        <FormMessage />
-                    </FormItem>
-                </div>
-            )}
+            {step === 2 && renderSplitwiseContent()}
             
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={handleClose}>Cancel</Button>
@@ -482,7 +523,8 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
                   <Button type="submit" disabled={isLoading} onClick={() => form.setValue('includeSplitwise', false)}>
                     {isLoading ? 'Adding...' : 'Add Expense'}
                   </Button>
-                  <Button type="button" variant="outline" onClick={handleGoToSplitwise}>
+                  <Button type="button" variant="outline" onClick={handleGoToSplitwise} disabled={isSplitwiseLoading}>
+                    {isSplitwiseLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Next: Add Splitwise
                   </Button>
                 </>
