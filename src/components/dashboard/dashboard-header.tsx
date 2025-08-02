@@ -15,6 +15,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { AddExpenseDialog } from './add-expense-dialog';
 import type { Category, SubCategory, Account } from './add-expense-dialog';
+import type { Transaction } from '@/app/page';
 
 interface User {
   username: string;
@@ -25,9 +26,10 @@ interface DashboardHeaderProps {
   subCategories: SubCategory[];
   bankAccounts: Account[];
   creditCards: Account[];
+  onExpenseAdded: (newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
 }
 
-export function DashboardHeader({ categories, subCategories, bankAccounts, creditCards }: DashboardHeaderProps) {
+export function DashboardHeader({ categories, subCategories, bankAccounts, creditCards, onExpenseAdded }: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
@@ -127,6 +129,7 @@ export function DashboardHeader({ categories, subCategories, bankAccounts, credi
         categories={categories}
         subCategories={subCategories}
         accounts={combinedAccounts}
+        onExpenseAdded={onExpenseAdded}
       />
     </>
   );

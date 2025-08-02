@@ -8,8 +8,8 @@ import { MonthlySummaryChart } from "@/components/dashboard/monthly-summary-char
 import { MonthlyMoneyTable, type FinancialSnapshotItem } from "@/components/dashboard/monthly-money-table";
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog"; // Import new component
 import { AlertCircle } from "lucide-react";
-import { useState, useMemo, useEffect, useRef } from 'react';
-import type { Category, SubCategory, Account } from "@/components/dashboard/add-expense-dialog";
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import type { Category, SubCategory, Account, ExpenseFormValues } from "@/components/dashboard/add-expense-dialog";
 
 
 const monthOptions = [
@@ -50,7 +50,7 @@ interface CreditCardAccount {
   logo: string;
 }
 
-interface Transaction {
+export interface Transaction {
   id: string;
   date: string | null;
   description: string;
@@ -168,6 +168,83 @@ export default function DashboardPage() {
   const [transactionEntityType, setTransactionEntityType] = useState<'bank' | 'credit-card' | null>(null);
   
   const availableYears = useMemo(() => getAvailableYears(), []);
+  
+  // --- Data Fetching Functions ---
+  const fetchBankDetails = useCallback(async () => {
+      setIsBankDetailsLoading(true); setBankDetailsError(null);
+      try {
+        const res = await fetch('/api/bank-details');
+        if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
+        const data = await res.json();
+        setApiBankAccounts(data.bankAccounts || []);
+      } catch (error) {
+        setBankDetailsError(error instanceof Error ? error.message : "An unknown error occurred");
+      } finally {
+        setIsBankDetailsLoading(false);
+      }
+  }, []);
+
+  const fetchCreditCardDetails = useCallback(async () => {
+      setIsCreditCardDetailsLoading(true); setCreditCardDetailsError(null);
+      try {
+          const res = await fetch('/api/credit-card-details');
+          if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
+          const data = await res.json();
+          setApiCreditCards(data.creditCardDetails || []);
+      } catch (error) {
+          setCreditCardDetailsError(error instanceof Error ? error.message : "An unknown error occurred");
+      } finally {
+          setIsCreditCardDetailsLoading(false);
+      }
+  }, []);
+  
+  const fetchExpenses = useCallback(async (month: string, year: number) => {
+    const cacheKey = `expenses-${year}-${month}`;
+    if (dataCache.current[cacheKey]) {
+        setRawMonthlyExpenses(dataCache.current[cacheKey].rawTransactions);
+        setCategories(dataCache.current[cacheKey].categories);
+        setSubCategories(dataCache.current[cacheKey].subCategories);
+        setIsExpensesLoading(false);
+        return;
+    }
+    setIsExpensesLoading(true); setExpensesError(null);
+    try {
+      const res = await fetch(`/api/monthly-expenses?month=${month}&year=${year}`);
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
+      const data = await res.json();
+      const rawTransactions = data.rawTransactions || [];
+      setCategories(data.categories || []);
+      setSubCategories(data.subCategories || []);
+      setRawMonthlyExpenses(rawTransactions);
+      setExcludedExpenseIds(new Set()); // Reset on month change
+      dataCache.current[cacheKey] = { rawTransactions, categories: data.categories, subCategories: data.subCategories };
+    } catch (error) {
+      setExpensesError(error instanceof Error ? error.message : "An unknown error occurred");
+    } finally {
+      setIsExpensesLoading(false);
+    }
+  }, []);
+
+  const handleExpenseAdded = useCallback((newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => {
+    // Update raw expenses if the new expense is in the currently viewed month/year
+    const expenseDate = new Date(newExpense.date!);
+    if (expenseDate.getFullYear() === selectedExpenseYear && monthOptions[expenseDate.getMonth()].value === selectedExpenseMonth) {
+      setRawMonthlyExpenses(prev => [...prev, newExpense].sort((a,b) => new Date(b.date!).getTime() - new Date(a.date!).getTime()));
+    }
+    
+    // Update account balances
+    if(accountType === 'Bank') {
+        setApiBankAccounts(prev => prev.map(acc => 
+            acc.id === accountId ? { ...acc, balance: acc.balance - newExpense.amount } : acc
+        ));
+    } else if (accountType === 'Credit Card') {
+        setApiCreditCards(prev => prev.map(card => 
+            card.id === accountId ? { ...card, usedAmount: card.usedAmount + newExpense.amount } : card
+        ));
+    }
+
+  }, [selectedExpenseMonth, selectedExpenseYear]);
+
 
   const handleToggleExcludeTransaction = (transactionId: string) => {
     setExcludedExpenseIds(prev => {
@@ -187,72 +264,20 @@ export default function DashboardPage() {
 
   // --- Data Fetching Effects ---
   useEffect(() => {
-    async function fetchBankDetails() {
-      setIsBankDetailsLoading(true); setBankDetailsError(null);
-      try {
-        const res = await fetch('/api/bank-details');
-        if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
-        const data = await res.json();
-        setApiBankAccounts(data.bankAccounts || []);
-      } catch (error) {
-        setBankDetailsError(error instanceof Error ? error.message : "An unknown error occurred");
-      } finally {
-        setIsBankDetailsLoading(false);
-      }
-    }
     fetchBankDetails();
-  }, []);
-
-  useEffect(() => {
-    async function fetchCreditCardDetails() {
-        setIsCreditCardDetailsLoading(true); setCreditCardDetailsError(null);
-        try {
-            const res = await fetch('/api/credit-card-details');
-            if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
-            const data = await res.json();
-            setApiCreditCards(data.creditCardDetails || []);
-        } catch (error) {
-            setCreditCardDetailsError(error instanceof Error ? error.message : "An unknown error occurred");
-        } finally {
-            setIsCreditCardDetailsLoading(false);
-        }
-    }
     fetchCreditCardDetails();
-  }, []);
+  }, [fetchBankDetails, fetchCreditCardDetails]);
   
   useEffect(() => {
-    async function fetchExpenses() {
-      const cacheKey = `expenses-${selectedExpenseYear}-${selectedExpenseMonth}`;
-      if (dataCache.current[cacheKey]) {
-        setRawMonthlyExpenses(dataCache.current[cacheKey].rawTransactions);
-        setExcludedExpenseIds(new Set()); // Reset on month change
-        return;
-      }
-      setIsExpensesLoading(true); setExpensesError(null);
-      try {
-        const res = await fetch(`/api/monthly-expenses?month=${selectedExpenseMonth}&year=${selectedExpenseYear}`);
-        if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
-        const data = await res.json();
-        const rawTransactions = data.rawTransactions || [];
-        setCategories(data.categories || []);
-        setSubCategories(data.subCategories || []);
-        setRawMonthlyExpenses(rawTransactions);
-        setExcludedExpenseIds(new Set()); // Reset on month change
-        dataCache.current[cacheKey] = { rawTransactions };
-      } catch (error) {
-        setExpensesError(error instanceof Error ? error.message : "An unknown error occurred");
-      } finally {
-        setIsExpensesLoading(false);
-      }
-    }
-    fetchExpenses();
-  }, [selectedExpenseMonth, selectedExpenseYear]);
+    fetchExpenses(selectedExpenseMonth, selectedExpenseYear);
+  }, [selectedExpenseMonth, selectedExpenseYear, fetchExpenses]);
 
   useEffect(() => {
     async function fetchIncome() {
       const cacheKey = `income-${selectedIncomeYear}-${selectedIncomeMonth}`;
       if (dataCache.current[cacheKey]) {
         setApiMonthlyIncome(dataCache.current[cacheKey]);
+        setIsIncomeLoading(false);
         return;
       }
       setIsIncomeLoading(true); setIncomeError(null);
@@ -277,6 +302,7 @@ export default function DashboardPage() {
       const cacheKey = `investments-${selectedInvestmentYear}-${selectedInvestmentMonth}`;
       if (dataCache.current[cacheKey]) {
         setApiMonthlyInvestments(dataCache.current[cacheKey]);
+        setIsInvestmentsLoading(false);
         return;
       }
       setIsInvestmentsLoading(true); setInvestmentsError(null);
@@ -301,6 +327,7 @@ export default function DashboardPage() {
       const cacheKey = `summary-${selectedSummaryYear}`;
       if (dataCache.current[cacheKey]) {
         setApiSummaryData(dataCache.current[cacheKey].summaryData);
+        setIsSummaryLoading(false);
         return;
       }
       setIsSummaryLoading(true); setSummaryError(null);
@@ -426,7 +453,7 @@ export default function DashboardPage() {
 
       const mockTransactions: Transaction[] = (sourceData as ExpenseItem[])
         .flatMap(item => ({
-            id: `${type}-${item.category}-${item.subCategory}`,
+            id: `${type}-${item.category}-${item.subCategory}-${Math.random()}`,
             date: new Date().toISOString(),
             description: "Bank Charges By Bank......", // Mock description
             amount: parseCurrency(item.expense),
@@ -522,6 +549,7 @@ export default function DashboardPage() {
           name: card.name,
           type: 'Credit Card' as const
         }))}
+        onExpenseAdded={handleExpenseAdded}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -688,3 +716,7 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+    
+
+    

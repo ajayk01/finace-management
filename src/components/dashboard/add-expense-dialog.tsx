@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -39,6 +39,7 @@ import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import type { Transaction } from '@/app/page';
 
 
 const expenseSchemaBase = z.object({
@@ -60,6 +61,7 @@ interface AddExpenseDialogProps {
   categories: Category[];
   subCategories: SubCategory[];
   accounts: Account[];
+  onExpenseAdded: (newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
 }
 
 export interface Category {
@@ -90,8 +92,10 @@ export interface SplitwiseGroup {
     members: SplitwiseUser[];
 }
 
+export type ExpenseFormValues = z.infer<typeof expenseSchemaBase>;
 
-export function AddExpenseDialog({ open, onOpenChange, categories, subCategories, accounts }: AddExpenseDialogProps) {
+
+export function AddExpenseDialog({ open, onOpenChange, categories, subCategories, accounts, onExpenseAdded }: AddExpenseDialogProps) {
   const { toast } = useToast();
   const [filteredSubCategories, setFilteredSubCategories] = useState<SubCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -119,8 +123,6 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
       path: ['subCategoryId'],
     }
   );
-
-  type ExpenseFormValues = z.infer<typeof expenseSchema>;
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
@@ -221,6 +223,22 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
             title: 'Expense Added',
             description: `The expense "${values.description}" has been successfully recorded.`,
         });
+
+        // Construct the new transaction object for client-side update
+        const categoryName = categories.find(c => c.id === values.categoryId)?.name || 'N/A';
+        const subCategoryName = subCategories.find(sc => sc.id === values.subCategoryId)?.name || '';
+
+        const newTransaction: Transaction = {
+          id: `new-${Date.now()}`, // Temporary unique ID for client-side rendering
+          date: values.date.toISOString(),
+          description: values.description,
+          amount: values.amount,
+          type: 'Expense',
+          category: categoryName,
+          subCategory: subCategoryName,
+        };
+
+        onExpenseAdded(newTransaction, values.accountId, selectedAccount.type);
         handleClose();
 
     } catch (error) {
@@ -328,7 +346,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
                   </PopoverTrigger>
                   <PopoverContent className="w-[300px] p-0" align="start">
                       <ScrollArea className="h-48">
-                          <div className="p-2">
+                          <div className="p-2 space-y-1">
                             {splitwiseUsers.length > 0 ? (
                                 splitwiseUsers.map((user) => (
                                 <div
