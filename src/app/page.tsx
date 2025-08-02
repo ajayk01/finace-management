@@ -9,7 +9,9 @@ import { MonthlyMoneyTable, type FinancialSnapshotItem } from "@/components/dash
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog"; // Import new component
 import { AlertCircle } from "lucide-react";
 import { useState, useMemo, useEffect, useRef } from 'react';
-import type { Category, SubCategory } from "@/components/dashboard/add-expense-dialog";
+import type { Category, SubCategory, Account } from "@/components/dashboard/add-expense-dialog";
+import type { SplitwiseGroup } from '@/components/dashboard/add-expense-dialog';
+
 
 const monthOptions = [
   { value: "jan", label: "January" },
@@ -165,6 +167,12 @@ export default function DashboardPage() {
   const [allFetchedTransactions, setAllFetchedTransactions] = useState<Transaction[]>([]);
   const [isFetchingMoreTransactions, setIsFetchingMoreTransactions] = useState(false);
   const [transactionEntityType, setTransactionEntityType] = useState<'bank' | 'credit-card' | null>(null);
+
+  // Splitwise State
+  const [splitwiseGroups, setSplitwiseGroups] = useState<SplitwiseGroup[]>([]);
+  const [isSplitwiseLoading, setIsSplitwiseLoading] = useState<boolean>(true);
+  const [splitwiseError, setSplitwiseError] = useState<string | null>(null);
+
   
   const availableYears = useMemo(() => getAvailableYears(), []);
 
@@ -321,10 +329,29 @@ export default function DashboardPage() {
     fetchSummaryData();
   }, [selectedSummaryYear]);
 
+  useEffect(() => {
+      async function fetchSplitwiseData() {
+          setIsSplitwiseLoading(true); setSplitwiseError(null);
+          try {
+              const res = await fetch('/api/splitwise');
+              if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch Splitwise data');
+              const data = await res.json();
+              setSplitwiseGroups(data.groups || []);
+          } catch (error) {
+              setSplitwiseError(error instanceof Error ? error.message : "An unknown error occurred");
+          } finally {
+              setIsSplitwiseLoading(false);
+          }
+      }
+      fetchSplitwiseData();
+  }, []);
+
 
   // --- Event Handlers ---
   const handleViewBankTransactions = async (account: BankAccount) => {
-    setTransactionDialogTitle(`${account.name} Transactions`);
+    const month = selectedExpenseMonth;
+    const year = selectedExpenseYear;
+    setTransactionDialogTitle(`${account.name} Transactions (${monthOptions.find(m=>m.value === month)?.label} ${year})`);
     setSelectedAccountId(account.id);
     setTransactionEntityType('bank');
     setTransactionPage(1);
@@ -335,7 +362,7 @@ export default function DashboardPage() {
     setAllFetchedTransactions([]);
 
     try {
-      const res = await fetch(`/api/bank-transactions?bankAccountId=${account.id}`);
+      const res = await fetch(`/api/bank-transactions?bankAccountId=${account.id}&month=${month}&year=${year}`);
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || 'Failed to fetch transactions');
@@ -362,7 +389,9 @@ export default function DashboardPage() {
   };
   
   const handleViewCreditCardTransactions = async (card: CreditCardAccount) => {
-    setTransactionDialogTitle(`${card.name} Transactions`);
+    const month = selectedExpenseMonth;
+    const year = selectedExpenseYear;
+    setTransactionDialogTitle(`${card.name} Transactions (${monthOptions.find(m=>m.value === month)?.label} ${year})`);
     setSelectedAccountId(card.id);
     setTransactionEntityType('credit-card');
     setTransactionPage(1);
@@ -373,7 +402,7 @@ export default function DashboardPage() {
     setAllFetchedTransactions([]);
 
     try {
-      const res = await fetch(`/api/credit-card-transactions?creditCardId=${card.id}`);
+      const res = await fetch(`/api/credit-card-transactions?creditCardId=${card.id}&month=${month}&year=${year}`);
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || 'Failed to fetch transactions');
@@ -517,6 +546,7 @@ export default function DashboardPage() {
           name: card.name,
           type: 'Credit Card' as const
         }))}
+        splitwiseGroups={splitwiseGroups}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -68,7 +68,15 @@ export async function POST(request: NextRequest) {
         console.log('Include Splitwise:', includeSplitwise);
         if (includeSplitwise) {
             console.log('Splitwise Group:', splitwiseGroupName);
-            console.log('Splitwise User:', splitwiseUserIds);
+            console.log('Splitwise User IDs:', splitwiseUserIds);
+            if (splitwiseUserIds && splitwiseUserIds.includes('57391213')) 
+            {
+                console.log('✅ Found user ID 57391213 in splitwiseUserIds');
+            } 
+            else 
+            {
+                console.log('❌ User ID 57391213 NOT found in splitwiseUserIds');
+            }
         }
 
         // await notion.pages.create({

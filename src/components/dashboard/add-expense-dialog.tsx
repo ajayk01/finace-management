@@ -38,6 +38,8 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
 
 const expenseSchemaBase = z.object({
   amount: z.coerce.number().min(0.01, 'Amount must be greater than 0.'),
@@ -58,6 +60,7 @@ interface AddExpenseDialogProps {
   categories: Category[];
   subCategories: SubCategory[];
   accounts: Account[];
+  splitwiseGroups: SplitwiseGroup[];
 }
 
 export interface Category {
@@ -77,26 +80,24 @@ export interface Account {
   type: 'Bank' | 'Credit Card';
 }
 
-// Mock data for Splitwise - replace with actual API calls later
-const splitwiseGroups = [
-    { id: 'g1', name: 'Apartment' },
-    { id: 'g2', name: 'Trip to Mountains' },
-    { id: 'g3', name: 'Office Lunch' },
-];
+export interface SplitwiseUser {
+    id: string;
+    name: string;
+}
 
-const splitwiseUsers = [
-    { id: 'u1', name: 'Alice' },
-    { id: 'u2', name: 'Bob' },
-    { id: 'u3', name: 'Charlie' },
-    { id: 'u4', name: 'David' },
-];
+export interface SplitwiseGroup {
+    id: string;
+    name: string;
+    members: SplitwiseUser[];
+}
 
 
-export function AddExpenseDialog({ open, onOpenChange, categories, subCategories, accounts }: AddExpenseDialogProps) {
+export function AddExpenseDialog({ open, onOpenChange, categories, subCategories, accounts, splitwiseGroups }: AddExpenseDialogProps) {
   const { toast } = useToast();
   const [filteredSubCategories, setFilteredSubCategories] = useState<SubCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
+  const [splitwiseUsers, setSplitwiseUsers] = useState<SplitwiseUser[]>([]);
 
   // Dynamically create the refined schema inside the component
   const expenseSchema = expenseSchemaBase.refine(
@@ -133,6 +134,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
   });
 
   const selectedCategoryId = form.watch('categoryId');
+  const selectedSplitwiseGroupId = form.watch('splitwiseGroupId');
   const selectedSplitwiseUsers = form.watch('splitwiseUserIds') || [];
 
   useEffect(() => {
@@ -148,6 +150,16 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
       setFilteredSubCategories([]);
     }
   }, [selectedCategoryId, subCategories, form]);
+
+  useEffect(() => {
+    if (selectedSplitwiseGroupId) {
+        const group = splitwiseGroups.find(g => g.id === selectedSplitwiseGroupId);
+        setSplitwiseUsers(group?.members || []);
+        form.setValue('splitwiseUserIds', []); // Reset users when group changes
+    } else {
+        setSplitwiseUsers([]);
+    }
+  }, [selectedSplitwiseGroupId, splitwiseGroups, form]);
 
   const handleClose = () => {
     onOpenChange(false);
@@ -186,6 +198,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
         payload.splitwiseUserIds = values.splitwiseUserIds;
         payload.splitwiseGroupName = splitwiseGroups.find(g => g.id === values.splitwiseGroupId)?.name;
     }
+
 
     try {
         const response = await fetch('/api/add-expense', {
@@ -418,6 +431,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
                                 <Button
                                 variant="outline"
                                 className="w-full justify-start font-normal"
+                                disabled={!selectedSplitwiseGroupId}
                                 >
                                 <Users className="mr-2 h-4 w-4" />
                                 {selectedSplitwiseUsers.length > 0
@@ -426,27 +440,28 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
                                 </Button>
                             </FormControl>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                            <Command>
-                                <CommandInput placeholder="Search users..." />
-                                <CommandList>
-                                <CommandEmpty>No users found.</CommandEmpty>
-                                <CommandGroup>
-                                    {splitwiseUsers.map((user) => (
-                                    <CommandItem
-                                        key={user.id}
-                                        onSelect={() => handleUserMultiSelect(user.id)}
-                                    >
-                                        <Checkbox
-                                        className="mr-2"
-                                        checked={selectedSplitwiseUsers.includes(user.id)}
-                                        />
-                                        {user.name}
-                                    </CommandItem>
-                                    ))}
-                                </CommandGroup>
-                                </CommandList>
-                            </Command>
+                            <PopoverContent className="w-[300px] p-0" align="start">
+                                <ScrollArea className="h-48">
+                                    <div className="p-2">
+                                        {splitwiseUsers.length > 0 ? (
+                                            splitwiseUsers.map((user) => (
+                                            <div
+                                                key={user.id}
+                                                onClick={() => handleUserMultiSelect(user.id)}
+                                                className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent transition-colors"
+                                            >
+                                                <Checkbox
+                                                    className="mr-2"
+                                                    checked={selectedSplitwiseUsers.includes(user.id)}
+                                                />
+                                                {user.name}
+                                            </div>
+                                            ))
+                                        ) : (
+                                            <p className='py-6 text-center text-sm text-muted-foreground'>No users found.</p>
+                                        )}
+                                    </div>
+                                </ScrollArea>
                             </PopoverContent>
                         </Popover>
                         <div className="pt-2">
@@ -487,11 +502,3 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
     </Dialog>
   );
 }
-
-// Minimal Command components for the multi-select dropdown
-const Command = ({children, className}: {children: React.ReactNode, className?: string}) => <div className={cn("flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground", className)}>{children}</div>
-const CommandInput = (props: React.ComponentProps<typeof Input>) => <div className='p-2'><Input {...props} className='h-9'/></div>
-const CommandList = ({children}: {children: React.ReactNode}) => <div className="max-h-[300px] overflow-y-auto overflow-x-hidden p-1">{children}</div>
-const CommandEmpty = ({children}: {children: React.ReactNode}) => <p className='py-6 text-center text-sm'>{children}</p>
-const CommandGroup = ({children}: {children: React.ReactNode}) => <div className='p-1'>{children}</div>
-const CommandItem = ({children, className, onSelect}: {children: React.ReactNode, className?: string, onSelect: () => void}) => <div onClick={onSelect} className={cn("relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent", className)}>{children}</div>
