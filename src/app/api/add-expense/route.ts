@@ -8,6 +8,80 @@ import { z } from 'zod';
 const notion = new Client({ auth: process.env.NOTION_API_WRITE });
 const EXPENSES_DB_ID = process.env.EXPENSE_DB_ID;
 
+// Splitwise API function using pure HTTP requests
+async function addSplitwiseExpense({ amount, description, groupId, userIds }: {
+    amount: number;
+    description: string;
+    groupId: string;
+    userIds: string[];
+}) {
+    const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
+    const CURRENT_USER_ID = process.env.SPLITWISE_CURRENT_USER_ID || "57391213"; // Your Splitwise user ID
+    
+    if (!SPLITWISE_API_KEY) {
+        throw new Error('Splitwise API key not configured');
+    }
+
+    // Calculate equal split amount
+    const totalUsers = userIds.length
+    const splitAmount1 = (amount / totalUsers);
+    console.log("the split amount is: ", splitAmount1);
+    const splitAmount = splitAmount1.toFixed(2); // Ensure it's a string with 2 decimal places
+
+    // Create form data for Splitwise API
+    const formData = new URLSearchParams();
+    formData.append('cost', amount.toString());
+    formData.append('description', description);
+    formData.append('group_id', groupId);
+    formData.append('split_equally', 'true');
+    formData.append('currency_code', 'INR'); // Adjust currency as needed
+    formData.append('details', "string");
+    
+    // Current user (who paid the expense)
+    formData.append('users__0__user_id', CURRENT_USER_ID);
+    formData.append('users__0__paid_share', amount.toString());
+    if (userIds.includes(CURRENT_USER_ID)) 
+    {
+        formData.append('users__0__owed_share', splitAmount);
+    } 
+    
+
+    // Other users (who owe money)
+    userIds.forEach((userId, index) => 
+    {
+        if(userId.includes(CURRENT_USER_ID)) 
+        {
+            return;    
+        } 
+        const userIndex = index + 1;
+        formData.append(`users__${userIndex}__user_id`, userId);
+        formData.append(`users__${userIndex}__paid_share`, '0.00');
+        formData.append(`users__${userIndex}__owed_share`, splitAmount);
+    });
+
+    console.log('📤 Sending to Splitwise API:', formData.toString());
+
+    // Make HTTP request to Splitwise API
+    const response = await fetch('https://secure.splitwise.com/api/v3.0/create_expense', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${SPLITWISE_API_KEY}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData
+    });
+
+    const responseText = await response.text();
+    console.log(`📥 Splitwise API Response (${response.status}):`, responseText);
+
+    if (!response.ok) {
+        throw new Error(`Splitwise API failed: ${response.status} - ${responseText}`);
+    }
+
+    const result = JSON.parse(responseText);
+    return result;
+}
+
 const addExpenseSchema = z.object({
   amount: z.number(),
   date: z.string(), // ISO date string
@@ -37,7 +111,7 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const parsedData = addExpenseSchema.parse(body);
 
-        let { amount, date, description, account, categoryId, subCategoryId, includeSplitwise, splitwiseGroupName, splitwiseUserIds } = parsedData;
+        let { amount, date, description, account, categoryId, subCategoryId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId } = parsedData;
         const properties: any = {
             "Expense":  {"title": [{"text": {"content":description}}]},
             "Amount": {"number":amount},
@@ -63,7 +137,30 @@ export async function POST(request: NextRequest) {
 
         console.log('Adding expense to Notion with properties:', properties);
         console.log('Include Splitwise:', includeSplitwise);
-        if (includeSplitwise) {
+
+        // await notion.pages.create({
+        //     parent: { database_id: EXPENSES_DB_ID },
+        //     properties: properties,
+        // });
+
+        // Add expense to Splitwise if enabled
+        if (includeSplitwise && splitwiseGroupId && splitwiseUserIds && splitwiseUserIds.length > 0) {
+            try {
+                await addSplitwiseExpense({
+                    amount,
+                    description,
+                    groupId: splitwiseGroupId,
+                    userIds: splitwiseUserIds
+                });
+                console.log('✅ Successfully added expense to Splitwise');
+            } catch (splitwiseError) {
+                console.error('❌ Failed to add expense to Splitwise:', splitwiseError);
+                // Don't fail the entire request if Splitwise fails
+            }
+        }
+
+        if (includeSplitwise) 
+        {
             console.log('Splitwise Group:', splitwiseGroupName);
             console.log('Splitwise User IDs:', splitwiseUserIds);
             if (splitwiseUserIds && splitwiseUserIds.includes('57391213')) 
@@ -75,11 +172,6 @@ export async function POST(request: NextRequest) {
                 console.log('❌ User ID 57391213 NOT found in splitwiseUserIds');
             }
         }
-
-        await notion.pages.create({
-            parent: { database_id: EXPENSES_DB_ID },
-            properties: properties,
-        });
 
         return NextResponse.json({ success: true, message: 'Expense added to Notion.' });
 
