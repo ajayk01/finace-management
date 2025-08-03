@@ -23,6 +23,8 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { Category } from "./add-expense-dialog";
 
 interface Transaction {
   id: string;
@@ -48,6 +50,9 @@ interface TransactionDialogProps {
   excludedIds?: Set<string>;
   onToggleExclude?: (id: string) => void;
   onClearExclusions?: () => void;
+  categories?: Category[];
+  categoryFilter?: string;
+  onCategoryFilterChange?: (value: string) => void;
 }
 
 const formatDate = (dateString: string | null) => {
@@ -86,12 +91,17 @@ export function TransactionDialog({
   excludedIds,
   onToggleExclude,
   onClearExclusions,
+  categories,
+  categoryFilter,
+  onCategoryFilterChange
 }: TransactionDialogProps) {
 
   const isMonthlySummary = React.useMemo(() =>
     transactions.length > 0 && transactions.some(tx => tx.category),
     [transactions]
   );
+  
+  const showCategoryFilter = isExcludable && categories && categories.length > 0 && categoryFilter !== undefined && onCategoryFilterChange;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -99,11 +109,28 @@ export function TransactionDialog({
         <DialogHeader>
           <div className="flex items-center justify-between pr-8">
             <DialogTitle>{title || "Transactions"}</DialogTitle>
-            {isExcludable && excludedIds && excludedIds.size > 0 && onClearExclusions && (
-              <Button variant="outline" size="sm" onClick={onClearExclusions}>
-                Clear Selection ({excludedIds.size})
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+                {showCategoryFilter && (
+                   <Select value={categoryFilter} onValueChange={onCategoryFilterChange}>
+                     <SelectTrigger className="w-[180px]">
+                       <SelectValue placeholder="Filter by category" />
+                     </SelectTrigger>
+                     <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.name}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                     </SelectContent>
+                   </Select>
+                )}
+                {isExcludable && excludedIds && excludedIds.size > 0 && onClearExclusions && (
+                  <Button variant="outline" size="sm" onClick={onClearExclusions}>
+                    Clear Selection ({excludedIds.size})
+                  </Button>
+                )}
+            </div>
           </div>
           <DialogDescription>
             {isExcludable

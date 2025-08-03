@@ -166,6 +166,7 @@ export default function DashboardPage() {
   const [allFetchedTransactions, setAllFetchedTransactions] = useState<Transaction[]>([]);
   const [isFetchingMoreTransactions, setIsFetchingMoreTransactions] = useState(false);
   const [transactionEntityType, setTransactionEntityType] = useState<'bank' | 'credit-card' | null>(null);
+  const [transactionCategoryFilter, setTransactionCategoryFilter] = useState<string>('all');
   
   const availableYears = useMemo(() => getAvailableYears(), []);
   
@@ -363,6 +364,7 @@ export default function DashboardPage() {
     setTransactionsError(null);
     setTransactions([]);
     setAllFetchedTransactions([]);
+    setTransactionCategoryFilter('all');
 
     try {
       const res = await fetch(`/api/bank-transactions?bankAccountId=${account.id}&month=${month}&year=${year}`);
@@ -385,7 +387,10 @@ export default function DashboardPage() {
       if (isFetchingMoreTransactions) return;
       setIsFetchingMoreTransactions(true);
       const nextPage = transactionPage + 1;
-      const newTransactions = allFetchedTransactions.slice(0, nextPage * 20);
+      const filteredSource = transactionCategoryFilter === 'all'
+            ? allFetchedTransactions
+            : allFetchedTransactions.filter(tx => tx.category === transactionCategoryFilter);
+      const newTransactions = filteredSource.slice(0, nextPage * 20);
       setTransactions(newTransactions);
       setTransactionPage(nextPage);
       setIsFetchingMoreTransactions(false);
@@ -403,6 +408,7 @@ export default function DashboardPage() {
     setTransactionsError(null);
     setTransactions([]);
     setAllFetchedTransactions([]);
+    setTransactionCategoryFilter('all');
 
     try {
       const res = await fetch(`/api/credit-card-transactions?creditCardId=${card.id}&month=${month}&year=${year}`);
@@ -432,6 +438,7 @@ export default function DashboardPage() {
     setTransactions([]);
     setAllFetchedTransactions([]);
     setTransactionPage(1);
+    setTransactionCategoryFilter('all');
 
     // For 'Expense', the sourceData is now the raw transactions array.
     if (type === 'Expense') {
@@ -522,6 +529,14 @@ export default function DashboardPage() {
     ] as FinancialSnapshotItem[];
   }, [selectedSummaryDetailMonth, apiSummaryData, apiBankAccounts, apiMonthlyExpenses, selectedExpenseMonth, selectedExpenseYear, selectedSummaryYear]);
 
+  useEffect(() => {
+    const filteredSource = transactionCategoryFilter === 'all'
+      ? allFetchedTransactions
+      : allFetchedTransactions.filter(tx => tx.category === transactionCategoryFilter);
+    
+    setTransactions(filteredSource.slice(0, transactionPage * 20));
+  }, [transactionCategoryFilter, allFetchedTransactions, transactionPage]);
+
   const renderError = (error: string | null, type: string) => {
     if (!error) return null;
     return (
@@ -532,7 +547,12 @@ export default function DashboardPage() {
     );
   };
   
-  const hasMoreTransactions = useMemo(() => transactions.length < allFetchedTransactions.length, [transactions, allFetchedTransactions]);
+  const hasMoreTransactions = useMemo(() => {
+    const filteredSource = transactionCategoryFilter === 'all'
+      ? allFetchedTransactions
+      : allFetchedTransactions.filter(tx => tx.category === transactionCategoryFilter);
+    return transactions.length < filteredSource.length;
+  }, [transactions, allFetchedTransactions, transactionCategoryFilter]);
 
   return (
     <div className="flex flex-col min-h-screen w-full">
@@ -712,11 +732,13 @@ export default function DashboardPage() {
         excludedIds={excludedExpenseIds}
         onToggleExclude={handleToggleExcludeTransaction}
         onClearExclusions={handleClearExclusions}
+        categories={categories}
+        categoryFilter={transactionCategoryFilter}
+        onCategoryFilterChange={(value) => {
+          setTransactionCategoryFilter(value);
+          setTransactionPage(1); // Reset page when filter changes
+        }}
       />
     </div>
   );
 }
-
-    
-
-    
