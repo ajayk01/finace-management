@@ -9,7 +9,7 @@ import { MonthlyMoneyTable, type FinancialSnapshotItem } from "@/components/dash
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog"; // Import new component
 import { AlertCircle } from "lucide-react";
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import type { Category, SubCategory, Account, ExpenseFormValues } from "@/components/dashboard/add-expense-dialog";
+import type { Category, SubCategory, Account } from "@/components/dashboard/add-expense-dialog";
 
 
 const monthOptions = [
@@ -131,15 +131,18 @@ export default function DashboardPage() {
   const [selectedExpenseMonth, setSelectedExpenseMonth] = useState<string>(currentMonthValue);
   const [selectedExpenseYear, setSelectedExpenseYear] = useState<number>(currentYear);
   const [excludedExpenseIds, setExcludedExpenseIds] = useState<Set<string>>(new Set());
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<Category[]>([]);
+  const [expenseSubCategories, setExpenseSubCategories] = useState<SubCategory[]>([]);
 
   // Income State
-  const [apiMonthlyIncome, setApiMonthlyIncome] = useState<ExpenseItem[]>([]);
+  const [rawMonthlyIncome, setRawMonthlyIncome] = useState<Transaction[]>([]);
   const [isIncomeLoading, setIsIncomeLoading] = useState<boolean>(true);
   const [incomeError, setIncomeError] = useState<string | null>(null);
   const [selectedIncomeMonth, setSelectedIncomeMonth] = useState<string>(currentMonthValue);
   const [selectedIncomeYear, setSelectedIncomeYear] = useState<number>(currentYear);
+  const [incomeCategories, setIncomeCategories] = useState<Category[]>([]);
+  const [incomeSubCategories, setIncomeSubCategories] = useState<SubCategory[]>([]);
+
 
   // Investments State
   const [apiMonthlyInvestments, setApiMonthlyInvestments] = useState<ExpenseItem[]>([]);
@@ -203,8 +206,8 @@ export default function DashboardPage() {
     const cacheKey = `expenses-${year}-${month}`;
     if (dataCache.current[cacheKey]) {
         setRawMonthlyExpenses(dataCache.current[cacheKey].rawTransactions);
-        setCategories(dataCache.current[cacheKey].categories);
-        setSubCategories(dataCache.current[cacheKey].subCategories);
+        setExpenseCategories(dataCache.current[cacheKey].categories);
+        setExpenseSubCategories(dataCache.current[cacheKey].subCategories);
         setIsExpensesLoading(false);
         return;
     }
@@ -214,16 +217,46 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
       const data = await res.json();
       const rawTransactions = data.rawTransactions || [];
-      setCategories(data.categories || []);
-      setSubCategories(data.subCategories || []);
+      const categories = data.categories || [];
+      const subCategories = data.subCategories || [];
+      setExpenseCategories(categories);
+      setExpenseSubCategories(subCategories);
       setRawMonthlyExpenses(rawTransactions);
       setExcludedExpenseIds(new Set()); // Reset on month change
-      dataCache.current[cacheKey] = { rawTransactions, categories: data.categories, subCategories: data.subCategories };
+      dataCache.current[cacheKey] = { rawTransactions, categories, subCategories };
     } catch (error) {
       setExpensesError(error instanceof Error ? error.message : "An unknown error occurred");
     } finally {
       setIsExpensesLoading(false);
     }
+  }, []);
+  
+  const fetchIncome = useCallback(async (month: string, year: number) => {
+      const cacheKey = `income-${year}-${month}`;
+      if (dataCache.current[cacheKey]) {
+          setRawMonthlyIncome(dataCache.current[cacheKey].rawTransactions);
+          setIncomeCategories(dataCache.current[cacheKey].categories);
+          setIncomeSubCategories(dataCache.current[cacheKey].subCategories);
+          setIsIncomeLoading(false);
+          return;
+      }
+      setIsIncomeLoading(true); setIncomeError(null);
+      try {
+          const res = await fetch(`/api/monthly-income?month=${month}&year=${year}`);
+          if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
+          const data = await res.json();
+          const rawTransactions = data.rawTransactions || [];
+          const categories = data.categories || [];
+          const subCategories = data.subCategories || [];
+          setRawMonthlyIncome(rawTransactions);
+          setIncomeCategories(categories);
+          setIncomeSubCategories(subCategories);
+          dataCache.current[cacheKey] = { rawTransactions, categories, subCategories };
+      } catch (error) {
+          setIncomeError(error instanceof Error ? error.message : "An unknown error occurred");
+      } finally {
+          setIsIncomeLoading(false);
+      }
   }, []);
 
   const handleExpenseAdded = useCallback((newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => {
@@ -243,9 +276,25 @@ export default function DashboardPage() {
             card.id === accountId ? { ...card, usedAmount: card.usedAmount + newExpense.amount } : card
         ));
     }
-
   }, [selectedExpenseMonth, selectedExpenseYear]);
-
+  
+  const handleIncomeAdded = useCallback((newIncome: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => {
+    const incomeDate = new Date(newIncome.date!);
+    if (incomeDate.getFullYear() === selectedIncomeYear && monthOptions[incomeDate.getMonth()].value === selectedIncomeMonth) {
+      setRawMonthlyIncome(prev => [...prev, newIncome].sort((a,b) => new Date(b.date!).getTime() - new Date(a.date!).getTime()));
+    }
+    
+    if(accountType === 'Bank') {
+        setApiBankAccounts(prev => prev.map(acc => 
+            acc.id === accountId ? { ...acc, balance: acc.balance + newIncome.amount } : acc
+        ));
+    } else if (accountType === 'Credit Card') {
+      // Typically income doesn't go to a credit card, but if it's a refund-like transaction:
+      setApiCreditCards(prev => prev.map(card => 
+          card.id === accountId ? { ...card, usedAmount: card.usedAmount - newIncome.amount } : card
+      ));
+    }
+  }, [selectedIncomeMonth, selectedIncomeYear]);
 
   const handleToggleExcludeTransaction = (transactionId: string) => {
     setExcludedExpenseIds(prev => {
@@ -274,29 +323,8 @@ export default function DashboardPage() {
   }, [selectedExpenseMonth, selectedExpenseYear, fetchExpenses]);
 
   useEffect(() => {
-    async function fetchIncome() {
-      const cacheKey = `income-${selectedIncomeYear}-${selectedIncomeMonth}`;
-      if (dataCache.current[cacheKey]) {
-        setApiMonthlyIncome(dataCache.current[cacheKey]);
-        setIsIncomeLoading(false);
-        return;
-      }
-      setIsIncomeLoading(true); setIncomeError(null);
-      try {
-        const res = await fetch(`/api/monthly-income?month=${selectedIncomeMonth}&year=${selectedIncomeYear}`);
-        if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
-        const data = await res.json();
-        const income = data.monthlyIncome || [];
-        setApiMonthlyIncome(income);
-        dataCache.current[cacheKey] = income;
-      } catch (error) {
-        setIncomeError(error instanceof Error ? error.message : "An unknown error occurred");
-      } finally {
-        setIsIncomeLoading(false);
-      }
-    }
-    fetchIncome();
-  }, [selectedIncomeMonth, selectedIncomeYear]);
+    fetchIncome(selectedIncomeMonth, selectedIncomeYear);
+  }, [selectedIncomeMonth, selectedIncomeYear, fetchIncome]);
 
   useEffect(() => {
     async function fetchInvestments() {
@@ -429,51 +457,17 @@ export default function DashboardPage() {
 
   const handleViewMonthlyTransactions = (
     title: string,
-    sourceData: any[],
+    sourceData: Transaction[],
     type: 'Income' | 'Expense' | 'Transfer'
   ) => {
     setTransactionDialogTitle(title);
     setIsTransactionDialogOpen(true);
+    setIsTransactionsLoading(false);
     setTransactionsError(null);
-    setTransactions([]);
-    setAllFetchedTransactions([]);
+    setTransactions(sourceData.slice(0, 20));
+    setAllFetchedTransactions(sourceData);
     setTransactionPage(1);
     setTransactionCategoryFilter('all');
-
-    // For 'Expense', the sourceData is now the raw transactions array.
-    if (type === 'Expense') {
-      setIsTransactionsLoading(false);
-      const allTxs = sourceData as Transaction[];
-      setAllFetchedTransactions(allTxs);
-      setTransactions(allTxs.slice(0, 20));
-      return;
-    }
-
-    // For Income and Investments, we still use mock data generation.
-    setIsTransactionsLoading(true);
-    setTimeout(() => {
-      if (sourceData.length === 0) {
-        setTransactions([]);
-        setIsTransactionsLoading(false);
-        return;
-      }
-
-      const mockTransactions: Transaction[] = (sourceData as ExpenseItem[])
-        .flatMap(item => ({
-            id: `${type}-${item.category}-${item.subCategory}-${Math.random()}`,
-            date: new Date().toISOString(),
-            description: "Bank Charges By Bank......", // Mock description
-            amount: parseCurrency(item.expense),
-            type: type,
-            category: item.category,
-            subCategory: item.subCategory,
-        }))
-        .sort((a, b) => b.amount - a.amount);
-      
-      setAllFetchedTransactions(mockTransactions);
-      setTransactions(mockTransactions.slice(0, 20));
-      setIsTransactionsLoading(false);
-    }, 1000);
   };
 
   // --- Memoized Data Transformations ---
@@ -483,6 +477,11 @@ export default function DashboardPage() {
     const filteredTransactions = rawMonthlyExpenses.filter(tx => !excludedExpenseIds.has(tx.id));
     return groupTransactions(filteredTransactions, selectedExpenseMonth, selectedExpenseYear);
   }, [rawMonthlyExpenses, excludedExpenseIds, selectedExpenseMonth, selectedExpenseYear]);
+  
+  const apiMonthlyIncome = useMemo(() => {
+    if (!rawMonthlyIncome) return [];
+    return groupTransactions(rawMonthlyIncome, selectedIncomeMonth, selectedIncomeYear);
+  }, [rawMonthlyIncome, selectedIncomeMonth, selectedIncomeYear]);
 
   const currentMonthExpensePieData = useMemo(() => {
     const aggregated: { [key: string]: number } = {};
@@ -557,8 +556,10 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col min-h-screen w-full">
       <DashboardHeader 
-        categories={categories}
-        subCategories={subCategories}
+        expenseCategories={expenseCategories}
+        expenseSubCategories={expenseSubCategories}
+        incomeCategories={incomeCategories}
+        incomeSubCategories={incomeSubCategories}
         bankAccounts={apiBankAccounts.map(acc => ({
           id: acc.id,
           name: acc.name,
@@ -570,6 +571,7 @@ export default function DashboardPage() {
           type: 'Credit Card' as const
         }))}
         onExpenseAdded={handleExpenseAdded}
+        onIncomeAdded={handleIncomeAdded}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -656,7 +658,7 @@ export default function DashboardPage() {
                 grandTotalTextColorClassName="text-green-700"
                 onViewTransactions={() => handleViewMonthlyTransactions(
                   `${monthOptions.find(m => m.value === selectedIncomeMonth)?.label} ${selectedIncomeYear} Income`,
-                  apiMonthlyIncome,
+                  rawMonthlyIncome,
                   'Income'
                 )}
               />
@@ -684,7 +686,7 @@ export default function DashboardPage() {
                 showCategoryTotalRow={false} 
                 onViewTransactions={() => handleViewMonthlyTransactions(
                   `${monthOptions.find(m => m.value === selectedInvestmentMonth)?.label} ${selectedInvestmentYear} Investments`,
-                  apiMonthlyInvestments,
+                  [], // Placeholder, investment transactions view not fully implemented
                   'Transfer'
                 )}
               />
@@ -732,7 +734,7 @@ export default function DashboardPage() {
         excludedIds={excludedExpenseIds}
         onToggleExclude={handleToggleExcludeTransaction}
         onClearExclusions={handleClearExclusions}
-        categories={categories}
+        categories={expenseCategories}
         categoryFilter={transactionCategoryFilter}
         onCategoryFilterChange={(value) => {
           setTransactionCategoryFilter(value);

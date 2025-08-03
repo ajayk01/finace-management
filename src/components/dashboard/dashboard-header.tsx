@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { AddExpenseDialog } from './add-expense-dialog';
+import { AddIncomeDialog } from './add-income-dialog';
 import type { Category, SubCategory, Account } from './add-expense-dialog';
 import type { Transaction } from '@/app/page';
 
@@ -22,18 +23,31 @@ interface User {
 }
 
 interface DashboardHeaderProps {
-  categories: Category[];
-  subCategories: SubCategory[];
+  expenseCategories: Category[];
+  expenseSubCategories: SubCategory[];
+  incomeCategories: Category[];
+  incomeSubCategories: SubCategory[];
   bankAccounts: Account[];
   creditCards: Account[];
   onExpenseAdded: (newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
+  onIncomeAdded: (newIncome: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
 }
 
-export function DashboardHeader({ categories, subCategories, bankAccounts, creditCards, onExpenseAdded }: DashboardHeaderProps) {
+export function DashboardHeader({ 
+  expenseCategories, 
+  expenseSubCategories, 
+  incomeCategories,
+  incomeSubCategories,
+  bankAccounts, 
+  creditCards, 
+  onExpenseAdded,
+  onIncomeAdded
+}: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
+  const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
 
   useEffect(() => {
     async function fetchUser() {
@@ -82,7 +96,7 @@ export function DashboardHeader({ categories, subCategories, bankAccounts, credi
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Add Expense
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => setIsAddIncomeOpen(true)}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Add Income
             </Button>
@@ -126,10 +140,18 @@ export function DashboardHeader({ categories, subCategories, bankAccounts, credi
       <AddExpenseDialog 
         open={isAddExpenseOpen} 
         onOpenChange={setIsAddExpenseOpen}
-        categories={categories}
-        subCategories={subCategories}
+        categories={expenseCategories}
+        subCategories={expenseSubCategories}
         accounts={combinedAccounts}
         onExpenseAdded={onExpenseAdded}
+      />
+       <AddIncomeDialog 
+        open={isAddIncomeOpen} 
+        onOpenChange={setIsAddIncomeOpen}
+        categories={incomeCategories}
+        subCategories={incomeSubCategories}
+        accounts={combinedAccounts}
+        onIncomeAdded={onIncomeAdded}
       />
     </>
   );

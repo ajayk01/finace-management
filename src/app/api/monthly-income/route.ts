@@ -11,21 +11,33 @@ const INC_CATEGORY_DB_ID = process.env.INC_CATEGORY_DB_ID;
 
 const categoryCache: Map<string, string> = new Map();
 const subCategoryCache: Map<string, string> = new Map();
+const subCategoryToCategoryMap: Map<string, string> = new Map(); // Maps subcategory ID to category ID
 
+interface IncomeTransaction {
+  id: string;
+  date: string | null;
+  description: string;
+  amount: number;
+  type: 'Income';
+  category?: string;
+  subCategory?: string;
+}
 
-interface ExpenseItem 
+interface IncomeItem 
 {
   year: number;
   month: string;
   category: string;
   subCategory: string;
-  expense: string;
+  expense: string; // Using "expense" to match the generic table component prop
 }
+
 const monthMap: Record<string, number> = 
 {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 };
+
 function getFromToDates(month: string, year: number) {
   const monthIndex = monthMap[month.toLowerCase()];
 
@@ -48,39 +60,45 @@ function formatDateToDDMMYYYY(date: Date): string {
 
 async function loadCategoryCache() 
 {
-  if (!INC_CATEGORY_DB_ID) return;
+  if (!INC_CATEGORY_DB_ID || categoryCache.size > 0) return;
   const response = await notion.databases.query({
     database_id: INC_CATEGORY_DB_ID,
   });
-    response.results.forEach((page: any) => 
-    {
+  response.results.forEach((page: any) => 
+  {
     const id = page.id;
     const name = page.properties["Category"]?.title?.[0]?.plain_text;
-    categoryCache.set(id, name);
+    if (id && name) categoryCache.set(id, name);
   });
 }
 
 async function loadSubCategoryCache() 
 {
-  if (!INC_SUB_CATEGORY_DB_ID) return;
+  if (!INC_SUB_CATEGORY_DB_ID || subCategoryCache.size > 0) return;
   const response = await notion.databases.query({
     database_id: INC_SUB_CATEGORY_DB_ID,
   });
-    response.results.forEach((page: any) => 
-    {
+  response.results.forEach((page: any) => 
+  {
     const id = page.id;
     const name = page.properties["Sub Category"]?.title?.[0]?.plain_text;
-    subCategoryCache.set(id, name);
+    const categoryId = page.properties["Category"]?.relation?.[0]?.id;
+    if (id && name) {
+        subCategoryCache.set(id, name);
+        if (categoryId) {
+            subCategoryToCategoryMap.set(id, categoryId);
+        }
+    }
   });
 }
 
-async function fetchGroupedMonthlyExpensesFromNotion({
+async function fetchMonthlyIncomeFromNotion({
   month,
   year
 }: {
   month?: string;
   year?: string;
-}): Promise<ExpenseItem[]> {
+}): Promise<IncomeTransaction[]> {
   if (!INCOME_DB_ID) {
     throw new Error("INCOME_DB_ID is not set in environment variables.");
   }
@@ -89,108 +107,79 @@ async function fetchGroupedMonthlyExpensesFromNotion({
     const { startDate, endDate } = getFromToDates(String(month), Number(year));
     const from = formatDateToDDMMYYYY(startDate);
     const to = formatDateToDDMMYYYY(endDate);
-    const filters: any = {};
-    if (from || to) {
-      filters["and"] = [];
-      if (from) {
-        filters["and"].push({
-          property: "Date",
-          date: { on_or_after: from }
-        });
-      }
-      if (to) {
-        filters["and"].push({
-          property: "Date",
-          date: { on_or_before: to }
-        });
-      }
-    }
+    const filters: any = { and: [] };
+      filters.and.push({
+        property: "Date",
+        date: { on_or_after: from }
+      });
+      filters.and.push({
+        property: "Date",
+        date: { on_or_before: to }
+      });
 
-    if(categoryCache.size === 0) 
-      {
-        console.log("Category cache is empty, loading from Notion...");
-         loadCategoryCache();
-      }
-
-    if(subCategoryCache.size === 0)
-      {
-        console.log("Sub Category cache is empty, loading from Notion...");
-        loadSubCategoryCache();
-      }
+    await Promise.all([loadCategoryCache(), loadSubCategoryCache()]);
 
     const response = await notion.databases.query({
       database_id: INCOME_DB_ID,
-      ...(filters.and && { filter: filters })
+      filter: filters
     });
 
     const items = await Promise.all(
-      response.results.map(async (page) => {
+      response.results.map(async (page:any) => {
+        const prop = page.properties;
+        const amount = Number(prop["Amount"]?.number);
+        if (amount === 0) return null;
         
+        const description = prop['Description']?.title?.[0]?.plain_text || 'No Description';
+        const date = prop['Date']?.date?.start || null;
         
-        const prop = (page as any).properties;
+        const categoryId = prop["Category"]?.relation?.[0]?.id;
+        const subCategoryId = prop["Sub Category"]?.relation?.[0]?.id;
+        
+        const categoryName = categoryId ? categoryCache.get(categoryId) : "Uncategorized";
+        const subCategoryName = subCategoryId ? subCategoryCache.get(subCategoryId) : "";
 
-        const amount = Number(prop["Amount"]["number"])
-        let subCategoryId = prop["Sub Category"]["relation"][0]?.["id"]
-        let categoryId = prop["Category"]["relation"][0]?.["id"]
-        let categoryName = ""
-        if(categoryId != undefined) 
-        {
-          // Check if category is already cached
-          categoryName = categoryCache.get(categoryId) ?? "";
-         
-        }
-        let subCategoryName = ""
-        if(subCategoryId != undefined)
-        {
-          //console.log(subCategoryCache)
-          subCategoryName = subCategoryCache.get(subCategoryId) ?? "";
-         
-        }
-        if(categoryName == "" && subCategoryName == "")
-        {
-          return null;
-        }
         return {
+          id: page.id,
+          date,
+          description,
+          amount,
+          type: 'Income',
           category: categoryName,
           subCategory: subCategoryName,
-          expense: amount
-        };
+        } as IncomeTransaction;
       })
     );
 
-    // Filter out nulls
-    const validItems = items.filter(Boolean) as {
-      category: string;
-      subCategory: string;
-      expense: number;
-    }[];
+    return items.filter(Boolean) as IncomeTransaction[];
+  } catch (error) {
+    console.error("Error fetching income from Notion:", error);
+    throw new Error("Failed to fetch income from Notion.");
+  }
+}
 
-    // Group and sum
+function groupTransactions(transactions: IncomeTransaction[], month: string, year: number): IncomeItem[] {
     const groupedMap: Record<string, Record<string, number>> = {};
 
-    validItems.forEach(({ category, subCategory, expense }) => {
-      if (!groupedMap[category]) groupedMap[category] = {};
-      if (!groupedMap[category][subCategory]) groupedMap[category][subCategory] = 0;
-      groupedMap[category][subCategory] += expense;
+    transactions.forEach(({ category, subCategory, amount }) => {
+      const cat = category || 'Uncategorized';
+      const sub = subCategory || 'Uncategorized';
+      if (!groupedMap[cat]) groupedMap[cat] = {};
+      if (!groupedMap[cat][sub]) groupedMap[cat][sub] = 0;
+      groupedMap[cat][sub] += amount;
     });
 
-    // Convert to ExpenseItem[]
-    const groupedArray: ExpenseItem[] = Object.entries(groupedMap).flatMap(
+    const groupedArray: IncomeItem[] = Object.entries(groupedMap).flatMap(
       ([category, subMap]) =>
         Object.entries(subMap).map(([subCategory, total]) => ({
           year: Number(year),
           month: String(month),
           category,
           subCategory,
-          expense: `₹${total}`
+          expense: `₹${total}` // Key is 'expense' to match generic component
         }))
     );
-
     return groupedArray;
-  } catch (error) {
-    console.error("Error fetching and grouping expenses from Notion:", error);
-    throw new Error("Failed to fetch grouped monthly expenses from Notion.");
-  }
 }
 
 export async function GET(request: NextRequest) {
@@ -198,24 +187,42 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const month = searchParams.get("month");
     const year = searchParams.get("year");
+
     if (!process.env.NOTION_API_KEY) {
       return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
     }
+     if (!month || !year) {
+        return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
+    }
+
+    await Promise.all([loadCategoryCache(), loadSubCategoryCache()]);
     
-    const [
-      monthlyIncome
-    ] = await Promise.all([
-      fetchGroupedMonthlyExpensesFromNotion({ month: month ?? undefined, year: year ?? undefined })
-    ]);
+    const rawTransactions = await fetchMonthlyIncomeFromNotion({ month, year });
+    const monthlyIncome = groupTransactions(rawTransactions, month, Number(year));
+    
+    rawTransactions.sort((a, b) => {
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+
+    const categories = Array.from(categoryCache.entries()).map(([id, name]) => ({ id, name }));
+    const subCategories = Array.from(subCategoryCache.entries()).map(([id, name]) => {
+      const categoryId = subCategoryToCategoryMap.get(id) || '';
+      return { id, name, categoryId };
+    });
 
     return NextResponse.json({
       monthlyIncome,
+      rawTransactions,
+      categories,
+      subCategories,
     });
   } catch (error) {
-    console.error("Error in /api/monthly-expense:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while fetching financial details.";
+    console.error("Error in /api/monthly-income:", error);
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while fetching income details.";
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 export { getFromToDates, formatDateToDDMMYYYY };
-export type { ExpenseItem };
+export type { IncomeItem };
