@@ -10,6 +10,7 @@ import { TransactionDialog } from "@/components/dashboard/transaction-dialog"; /
 import { AlertCircle } from "lucide-react";
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { Category, SubCategory, Account } from "@/components/dashboard/add-expense-dialog";
+import type { InvestmentCategory } from "@/components/dashboard/add-investment-dialog";
 
 
 const monthOptions = [
@@ -145,11 +146,12 @@ export default function DashboardPage() {
 
 
   // Investments State
-  const [apiMonthlyInvestments, setApiMonthlyInvestments] = useState<ExpenseItem[]>([]);
+  const [rawMonthlyInvestments, setRawMonthlyInvestments] = useState<Transaction[]>([]);
   const [isInvestmentsLoading, setIsInvestmentsLoading] = useState<boolean>(true);
   const [investmentsError, setInvestmentsError] = useState<string | null>(null);
   const [selectedInvestmentMonth, setSelectedInvestmentMonth] = useState<string>(currentMonthValue);
   const [selectedInvestmentYear, setSelectedInvestmentYear] = useState<number>(currentYear);
+  const [investmentCategories, setInvestmentCategories] = useState<InvestmentCategory[]>([]);
 
   // Summary Chart & Netflow State
   const [apiSummaryData, setApiSummaryData] = useState<SummaryDataItem[]>([]);
@@ -296,6 +298,17 @@ export default function DashboardPage() {
     }
   }, [selectedIncomeMonth, selectedIncomeYear]);
 
+  const handleInvestmentAdded = useCallback((newInvestment: Transaction, fromAccountId: string) => {
+    const investmentDate = new Date(newInvestment.date!);
+    if (investmentDate.getFullYear() === selectedInvestmentYear && monthOptions[investmentDate.getMonth()].value === selectedInvestmentMonth) {
+        setRawMonthlyInvestments(prev => [...prev, newInvestment].sort((a,b) => new Date(b.date!).getTime() - new Date(a.date!).getTime()));
+    }
+
+    setApiBankAccounts(prev => prev.map(acc =>
+        acc.id === fromAccountId ? { ...acc, balance: acc.balance - newInvestment.amount } : acc
+    ));
+  }, [selectedInvestmentMonth, selectedInvestmentYear]);
+
   const handleToggleExcludeTransaction = (transactionId: string) => {
     setExcludedExpenseIds(prev => {
         const newSet = new Set(prev);
@@ -330,7 +343,8 @@ export default function DashboardPage() {
     async function fetchInvestments() {
       const cacheKey = `investments-${selectedInvestmentYear}-${selectedInvestmentMonth}`;
       if (dataCache.current[cacheKey]) {
-        setApiMonthlyInvestments(dataCache.current[cacheKey]);
+        setRawMonthlyInvestments(dataCache.current[cacheKey].rawTransactions);
+        setInvestmentCategories(dataCache.current[cacheKey].categories);
         setIsInvestmentsLoading(false);
         return;
       }
@@ -339,9 +353,12 @@ export default function DashboardPage() {
         const res = await fetch(`/api/monthly-investments?month=${selectedInvestmentMonth}&year=${selectedInvestmentYear}`);
         if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
         const data = await res.json();
-        const investments = data.monthlyInvestments || [];
-        setApiMonthlyInvestments(investments);
-        dataCache.current[cacheKey] = investments;
+        // Assuming the new API returns raw transactions and categories
+        const rawTransactions = data.rawTransactions || [];
+        const categories = data.investmentAccounts || [];
+        setRawMonthlyInvestments(rawTransactions);
+        setInvestmentCategories(categories);
+        dataCache.current[cacheKey] = { rawTransactions, categories };
       } catch (error) {
         setInvestmentsError(error instanceof Error ? error.message : "An unknown error occurred");
       } finally {
@@ -458,7 +475,7 @@ export default function DashboardPage() {
   const handleViewMonthlyTransactions = (
     title: string,
     sourceData: Transaction[],
-    type: 'Income' | 'Expense' | 'Transfer'
+    type: 'Income' | 'Expense' | 'Transfer' | 'Investment'
   ) => {
     setTransactionDialogTitle(title);
     setIsTransactionDialogOpen(true);
@@ -482,6 +499,11 @@ export default function DashboardPage() {
     if (!rawMonthlyIncome) return [];
     return groupTransactions(rawMonthlyIncome, selectedIncomeMonth, selectedIncomeYear);
   }, [rawMonthlyIncome, selectedIncomeMonth, selectedIncomeYear]);
+
+  const apiMonthlyInvestments = useMemo(() => {
+    if (!rawMonthlyInvestments) return [];
+    return groupTransactions(rawMonthlyInvestments, selectedInvestmentMonth, selectedInvestmentYear);
+  }, [rawMonthlyInvestments, selectedInvestmentMonth, selectedInvestmentYear]);
 
   const currentMonthExpensePieData = useMemo(() => {
     const aggregated: { [key: string]: number } = {};
@@ -508,7 +530,13 @@ export default function DashboardPage() {
     }
     
     const incomeForSelectedMonth = summaryForMonth?.income || 0;
-    const investmentForSelectedMonth = summaryForMonth?.investment || 0;
+    
+    // Similarly, use dynamically calculated investment total if viewing the same period
+    let investmentForSelectedMonth = summaryForMonth?.investment || 0;
+    if (selectedInvestmentMonth === selectedSummaryDetailMonth && selectedInvestmentYear === selectedSummaryYear) {
+      investmentForSelectedMonth = apiMonthlyInvestments.reduce((total, item) => total + parseCurrency(item.expense), 0);
+    }
+
 
     const netFlows = incomeForSelectedMonth - expenseForSelectedMonth - investmentForSelectedMonth;
     
@@ -526,7 +554,7 @@ export default function DashboardPage() {
       { category: "HDFC Bank Balance", amount: hdfcBankBalance, colorClassName: "text-foreground font-medium" },
       { category: "Total Netflows", amount: netFlows, colorClassName: `${netFlowsColorClass} font-medium` },
     ] as FinancialSnapshotItem[];
-  }, [selectedSummaryDetailMonth, apiSummaryData, apiBankAccounts, apiMonthlyExpenses, selectedExpenseMonth, selectedExpenseYear, selectedSummaryYear]);
+  }, [selectedSummaryDetailMonth, apiSummaryData, apiBankAccounts, apiMonthlyExpenses, apiMonthlyInvestments, selectedExpenseMonth, selectedExpenseYear, selectedInvestmentMonth, selectedInvestmentYear, selectedSummaryYear]);
 
   useEffect(() => {
     const filteredSource = transactionCategoryFilter === 'all'
@@ -560,6 +588,7 @@ export default function DashboardPage() {
         expenseSubCategories={expenseSubCategories}
         incomeCategories={incomeCategories}
         incomeSubCategories={incomeSubCategories}
+        investmentCategories={investmentCategories}
         bankAccounts={apiBankAccounts.map(acc => ({
           id: acc.id,
           name: acc.name,
@@ -572,6 +601,7 @@ export default function DashboardPage() {
         }))}
         onExpenseAdded={handleExpenseAdded}
         onIncomeAdded={handleIncomeAdded}
+        onInvestmentAdded={handleInvestmentAdded}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -686,8 +716,8 @@ export default function DashboardPage() {
                 showCategoryTotalRow={false} 
                 onViewTransactions={() => handleViewMonthlyTransactions(
                   `${monthOptions.find(m => m.value === selectedInvestmentMonth)?.label} ${selectedInvestmentYear} Investments`,
-                  [], // Placeholder, investment transactions view not fully implemented
-                  'Transfer'
+                  rawMonthlyInvestments,
+                  'Investment'
                 )}
               />
             )}

@@ -6,19 +6,35 @@ import { Client } from '@notionhq/client';
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const INVESTMENT_TRANS_DB_ID = process.env.INVESTMENT_TRANS_DB_ID;
-interface ExpenseItem 
-{
+const INVESTMENT_ACCOUNTS_DB_ID = process.env.INVESTMENT_DB_ID;
+
+const investmentAccountCache: Map<string, string> = new Map();
+
+// Interfaces for data structures
+interface Transaction {
+    id: string;
+    date: string | null;
+    description: string;
+    amount: number;
+    type: 'Investment';
+    category?: string; // Will store the investment account name
+    subCategory?: string;
+}
+
+interface ExpenseItem {
   year: number;
   month: string;
   category: string;
   subCategory: string;
   expense: string;
 }
+
 const monthMap: Record<string, number> = 
 {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 };
+
 function getFromToDates(month: string, year: number) {
   const monthIndex = monthMap[month.toLowerCase()];
 
@@ -39,106 +55,104 @@ function formatDateToDDMMYYYY(date: Date): string {
     return `${year}-${month}-${day}`;
 }
 
-async function fetchGroupedMonthlyExpensesFromNotion({
+async function loadInvestmentAccountCache() {
+  if (!INVESTMENT_ACCOUNTS_DB_ID || investmentAccountCache.size > 0) return;
+  const response = await notion.databases.query({
+    database_id: INVESTMENT_ACCOUNTS_DB_ID,
+  });
+  response.results.forEach((page: any) => {
+    const id = page.id;
+    const name = page.properties["Investment Account"]?.title?.[0]?.plain_text;
+    if (id && name) investmentAccountCache.set(id, name);
+  });
+}
+
+async function fetchMonthlyInvestmentsFromNotion({
   month,
   year
 }: {
   month?: string;
   year?: string;
-}): Promise<ExpenseItem[]> {
+}): Promise<Transaction[]> {
   if (!INVESTMENT_TRANS_DB_ID) {
-    throw new Error("INVESTMENT_DB_ID is not set in environment variables.");
+    throw new Error("INVESTMENT_TRANS_DB_ID is not set in environment variables.");
   }
 
   try {
     const { startDate, endDate } = getFromToDates(String(month), Number(year));
     const from = formatDateToDDMMYYYY(startDate);
     const to = formatDateToDDMMYYYY(endDate);
-    const filters: any = {};
-    if (from || to) {
-      filters["and"] = [];
-      if (from) {
-        filters["and"].push({
-          property: "Investment Date",
-          date: { on_or_after: from }
-        });
-      }
-      if (to) {
-        filters["and"].push({
-          property: "Investment Date",
-          date: { on_or_before: to }
-        });
-      }
-    }
+    
+    const filters: any = { and: [] };
+    filters.and.push({
+      property: "Investment Date",
+      date: { on_or_after: from }
+    });
+    filters.and.push({
+      property: "Investment Date",
+      date: { on_or_before: to }
+    });
+
+    await loadInvestmentAccountCache();
 
     const response = await notion.databases.query({
       database_id: INVESTMENT_TRANS_DB_ID,
-      ...(filters.and && { filter: filters })
+      filter: filters
     });
 
     const items = await Promise.all(
-      response.results.map(async (page) => {
-        
-        
+      response.results.map(async (page: any) => {
         const prop = (page as any).properties;
 
-        const amount = Number(prop["Invested Amount"]["number"])
-        let subCategoryName = "" 
-        let categoryName = "";
-        let categoryId = prop["Invested Account"]["relation"]
-        if (categoryId && categoryId.length > 0) 
-        {
-          const categoryPage = await notion.pages.retrieve({
-            page_id: categoryId[0]["id"]
-          });
+        const amount = Number(prop["Invested Amount"]?.number) || 0;
+        if (amount === 0) return null;
 
-          categoryName = (categoryPage as any).properties["Investment Account"]["title"][0]["plain_text"];
-        }
-        if(categoryName === "" && subCategoryName === "")
-        {
-          return null;
-        }
+        const description = prop['Description']?.title?.[0]?.plain_text || 'No Description';
+        const date = prop['Investment Date']?.date?.start || null;
+        
+        const investmentAccountId = prop["Invested Account"]?.relation?.[0]?.id;
+        const categoryName = investmentAccountId ? investmentAccountCache.get(investmentAccountId) : "Uncategorized";
+
         return {
+          id: page.id,
+          date,
+          description,
+          amount,
+          type: 'Investment',
           category: categoryName,
-          subCategory: subCategoryName,
-          expense: amount
-        };
+          subCategory: '', // Investments don't have sub-categories in this model
+        } as Transaction;
       })
     );
 
-    // Filter out nulls
-    const validItems = items.filter(Boolean) as {
-      category: string;
-      subCategory: string;
-      expense: number;
-    }[];
+    return items.filter(Boolean) as Transaction[];
+  } catch (error) {
+    console.error("Error fetching investments from Notion:", error);
+    throw new Error("Failed to fetch investments from Notion.");
+  }
+}
 
-    // Group and sum
+function groupTransactions(transactions: Transaction[], month: string, year: number): ExpenseItem[] {
     const groupedMap: Record<string, Record<string, number>> = {};
 
-    validItems.forEach(({ category, subCategory, expense }) => {
-      if (!groupedMap[category]) groupedMap[category] = {};
-      if (!groupedMap[category][subCategory]) groupedMap[category][subCategory] = 0;
-      groupedMap[category][subCategory] += expense;
+    transactions.forEach(({ category, subCategory, amount }) => {
+      const cat = category || 'Uncategorized';
+      const sub = subCategory || ''; // Not used for investments but kept for structure
+      if (!groupedMap[cat]) groupedMap[cat] = {};
+      if (!groupedMap[cat][sub]) groupedMap[cat][sub] = 0;
+      groupedMap[cat][sub] += amount;
     });
 
-    // Convert to ExpenseItem[]
-    const groupedArray: ExpenseItem[] = Object.entries(groupedMap).flatMap(
+    return Object.entries(groupedMap).flatMap(
       ([category, subMap]) =>
         Object.entries(subMap).map(([subCategory, total]) => ({
           year: Number(year),
           month: String(month),
           category,
           subCategory,
-          expense: `₹${total}`
+          expense: `₹${total.toFixed(2)}`
         }))
     );
-
-    return groupedArray;
-  } catch (error) {
-    console.error("Error fetching and grouping expenses from Notion:", error);
-    throw new Error("Failed to fetch grouped monthly expenses from Notion.");
-  }
 }
 
 export async function GET(request: NextRequest) {
@@ -149,15 +163,27 @@ export async function GET(request: NextRequest) {
     if (!process.env.NOTION_API_KEY) {
       return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
     }
+    if (!month || !year) {
+        return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
+    }
+
+    await loadInvestmentAccountCache();
     
-    const [
-      monthlyInvestments
-    ] = await Promise.all([
-      fetchGroupedMonthlyExpensesFromNotion({ month: month ?? undefined, year: year ?? undefined })
-    ]);
+    const rawTransactions = await fetchMonthlyInvestmentsFromNotion({ month, year });
+    const monthlyInvestments = groupTransactions(rawTransactions, month, Number(year));
+    
+    rawTransactions.sort((a, b) => {
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+
+    const investmentAccounts = Array.from(investmentAccountCache.entries()).map(([id, name]) => ({ id, name }));
 
     return NextResponse.json({
       monthlyInvestments,
+      rawTransactions,
+      investmentAccounts,
     });
   } catch (error) {
     console.error("Error in /api/monthly-investment:", error);
@@ -165,5 +191,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
-export { getFromToDates, formatDateToDDMMYYYY };
-export type { ExpenseItem };

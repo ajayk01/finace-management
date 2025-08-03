@@ -15,7 +15,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { AddExpenseDialog } from './add-expense-dialog';
 import { AddIncomeDialog } from './add-income-dialog';
+import { AddInvestmentDialog } from './add-investment-dialog';
 import type { Category, SubCategory, Account } from './add-expense-dialog';
+import type { InvestmentCategory } from './add-investment-dialog';
 import type { Transaction } from '@/app/page';
 
 interface User {
@@ -27,10 +29,12 @@ interface DashboardHeaderProps {
   expenseSubCategories: SubCategory[];
   incomeCategories: Category[];
   incomeSubCategories: SubCategory[];
+  investmentCategories: InvestmentCategory[];
   bankAccounts: Account[];
   creditCards: Account[];
   onExpenseAdded: (newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
   onIncomeAdded: (newIncome: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
+  onInvestmentAdded: (newInvestment: Transaction, fromAccountId: string) => void;
 }
 
 export function DashboardHeader({ 
@@ -38,16 +42,19 @@ export function DashboardHeader({
   expenseSubCategories, 
   incomeCategories,
   incomeSubCategories,
+  investmentCategories,
   bankAccounts, 
   creditCards, 
   onExpenseAdded,
-  onIncomeAdded
+  onIncomeAdded,
+  onInvestmentAdded
 }: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
+  const [isAddInvestmentOpen, setIsAddInvestmentOpen] = useState(false);
 
   useEffect(() => {
     async function fetchUser() {
@@ -86,6 +93,8 @@ export function DashboardHeader({
     ...bankAccounts.map(acc => ({ ...acc, type: "Bank" as const })),
     ...creditCards.map(card => ({ ...card, type: "Credit Card" as const }))
   ];
+  
+  const bankAccountsOnly = bankAccounts.map(acc => ({ ...acc, type: "Bank" as const }));
 
   return (
     <>
@@ -100,7 +109,7 @@ export function DashboardHeader({
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Add Income
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => setIsAddInvestmentOpen(true)}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Add Investment
             </Button>
@@ -152,6 +161,13 @@ export function DashboardHeader({
         subCategories={incomeSubCategories}
         accounts={combinedAccounts}
         onIncomeAdded={onIncomeAdded}
+      />
+      <AddInvestmentDialog
+        open={isAddInvestmentOpen}
+        onOpenChange={setIsAddInvestmentOpen}
+        investmentCategories={investmentCategories}
+        accounts={bankAccountsOnly}
+        onInvestmentAdded={onInvestmentAdded}
       />
     </>
   );
