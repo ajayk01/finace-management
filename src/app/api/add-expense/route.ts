@@ -4,11 +4,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
 import { z } from 'zod';
+import { error } from 'node:console';
 
 const notion = new Client({ auth: process.env.NOTION_API_WRITE });
 const EXPENSES_DB_ID = process.env.EXPENSE_DB_ID;
 const CURRENT_USER_ID = process.env.SPLITWISE_CURRENT_USER_ID || "57391213"; // Your Splitwise user ID
-const EXPENSE_FOR_OTHERS_CATEGORY_ID = process.env.EXPENSE_FOR_OTHERS_CATEGORY_ID || '';
 
 const userMapping = new Map<string, string>();
 
@@ -70,7 +70,6 @@ async function addSplitwiseExpense({ amount, description, groupId, userIds }: {
     });
 
     const responseText = await response.text();
-    console.log(`📥 Splitwise API Response (${response.status}):`, responseText);
 
     if (!response.ok) {
         throw new Error(`Splitwise API failed: ${response.status} - ${responseText}`);
@@ -211,7 +210,6 @@ export async function POST(request: NextRequest)
 
         let { amount, date, description, account, categoryId, subCategoryId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId } = parsedData;
 
-        console.log('📋 Processing expense:', { description, amount, includeSplitwise });
 
         // Fetch Splitwise user mapping for enhanced descriptions
         // Use the global userMapping Map for lookup 
@@ -221,35 +219,22 @@ export async function POST(request: NextRequest)
         let result;
         if (includeSplitwise && splitwiseGroupId && splitwiseUserIds && splitwiseUserIds.length > 0) {
             try {
-                if(splitwiseUserIds.includes(CURRENT_USER_ID)) {
-                    const expAmt = (amount / splitwiseUserIds.length).toFixed(2);
-                    console.log("the split amount is: ", expAmt);
-                    const notionProp = await createNotionExpense({amount: Number(expAmt), date, description, account, categoryId, subCategoryId});
+                
+                    const notionProp = await createNotionExpense({amount: Number(amount), date, description, account, categoryId, subCategoryId});
 
                     result = await notion.pages.create({
                         parent: { database_id: EXPENSES_DB_ID },
                         properties: notionProp,
                     });
-
-                    const remainingAmt = (amount - Number(expAmt)).toFixed(2);
-                    categoryId = EXPENSE_FOR_OTHERS_CATEGORY_ID; // Use the configured category ID for others
-                    const notionPropForOthers = await createNotionExpense({amount: Number(remainingAmt), date, description, account, categoryId});
-
-                    const resultForOthers = await notion.pages.create({
-                        parent: { database_id: EXPENSES_DB_ID },
-                        properties: notionPropForOthers,
-                    });
-                    console.log('✅ Notion expense for others created successfully:', resultForOthers.id);
-                    resultForOthersId = resultForOthers.id;
-                }
+                    resultForOthersId = result.id;
+                
                
-                await addSplitwiseExpense({
-                    amount,
-                    description: parsedData.description, // Use original description for Splitwise
-                    groupId: splitwiseGroupId,
-                    userIds: splitwiseUserIds
-                });
-                console.log('✅ Successfully added expense to Splitwise');
+                // await addSplitwiseExpense({
+                //     amount,
+                //     description: parsedData.description, // Use original description for Splitwise
+                //     groupId: splitwiseGroupId,
+                //     userIds: splitwiseUserIds
+                // });
                 const totalUsers = splitwiseUserIds.length
                 const splitAmount = (amount / totalUsers).toFixed(2);
                 const splitwiseDbId = process.env.SPLITWISE_DB_ID;
@@ -266,11 +251,8 @@ export async function POST(request: NextRequest)
                     if (resultForOthersId) 
                     {
                         const notionUserId = userMapping.get(userId);
-                        console.log("Retrieved notionUserId:", notionUserId);
-                        
                         if (!notionUserId) {
-                            const notionUserIdStr = userMapping.get(String(userId));
-                            return; // Skip this user if no mapping found
+                            throw new Error("UserId not found");
                         }
                         
                         const notionSplitProp = await fetchNotionSplitwiseProp({
@@ -280,7 +262,6 @@ export async function POST(request: NextRequest)
                             expenseId: resultForOthersId
                         });
                         
-                        console.log("Creating split expense for user:", userId, "with properties:", notionSplitProp);
                         
                         result = await notion.pages.create({
                             parent: { database_id: splitwiseDbId },
