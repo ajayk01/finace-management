@@ -398,9 +398,7 @@ export default function DashboardPage() {
 
   // --- Event Handlers ---
   const handleViewBankTransactions = async (account: BankAccount) => {
-    const month = selectedExpenseMonth;
-    const year = selectedExpenseYear;
-    setTransactionDialogTitle(`${account.name} Transactions (${monthOptions.find(m=>m.value === month)?.label} ${year})`);
+    setTransactionDialogTitle(`${account.name} Transactions`);
     setSelectedAccountId(account.id);
     setTransactionEntityType('bank');
     setTransactionPage(1);
@@ -412,7 +410,7 @@ export default function DashboardPage() {
     setTransactionCategoryFilter('all');
 
     try {
-      const res = await fetch(`/api/bank-transactions?bankAccountId=${account.id}&month=${month}&year=${year}`);
+      const res = await fetch(`/api/bank-transactions?bankAccountId=${account.id}`);
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || 'Failed to fetch transactions');
@@ -442,9 +440,7 @@ export default function DashboardPage() {
   };
   
   const handleViewCreditCardTransactions = async (card: CreditCardAccount) => {
-    const month = selectedExpenseMonth;
-    const year = selectedExpenseYear;
-    setTransactionDialogTitle(`${card.name} Transactions (${monthOptions.find(m=>m.value === month)?.label} ${year})`);
+    setTransactionDialogTitle(`${card.name} Transactions`);
     setSelectedAccountId(card.id);
     setTransactionEntityType('credit-card');
     setTransactionPage(1);
@@ -456,7 +452,7 @@ export default function DashboardPage() {
     setTransactionCategoryFilter('all');
 
     try {
-      const res = await fetch(`/api/credit-card-transactions?creditCardId=${card.id}&month=${month}&year=${year}`);
+      const res = await fetch(`/api/credit-card-transactions?creditCardId=${card.id}`);
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || 'Failed to fetch transactions');

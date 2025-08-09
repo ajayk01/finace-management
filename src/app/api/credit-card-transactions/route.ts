@@ -38,8 +38,8 @@ function getFromToDates(month: string, year: number) {
 async function fetchFromDatabase(
     databaseId: string | undefined, 
     creditCardId: string, 
-    from: string, 
-    to: string, 
+    from: string | null, 
+    to: string | null, 
     type: Transaction['type'], 
     propertyNames: { date: string, amount: string, description: string, relation: string }
 ): Promise<Transaction[]> {
@@ -49,29 +49,36 @@ async function fetchFromDatabase(
     }
 
     try {
+        const filterConditions: any[] = [
+            {
+                property: propertyNames.relation,
+                relation: {
+                    contains: creditCardId,
+                },
+            },
+        ];
+        
+        if (from) {
+            filterConditions.push({
+                property: propertyNames.date,
+                date: {
+                    on_or_after: from,
+                },
+            });
+        }
+        if (to) {
+            filterConditions.push({
+                property: propertyNames.date,
+                date: {
+                    on_or_before: to,
+                },
+            });
+        }
+
         const response = await notion.databases.query({
             database_id: databaseId,
             filter: {
-                and: [
-                    {
-                        property: propertyNames.relation,
-                        relation: {
-                            contains: creditCardId,
-                        },
-                    },
-                    {
-                        property: propertyNames.date,
-                        date: {
-                            on_or_after: from,
-                        },
-                    },
-                    {
-                        property: propertyNames.date,
-                        date: {
-                            on_or_before: to,
-                        },
-                    }
-                ],
+                and: filterConditions,
             },
         });
 
@@ -115,13 +122,18 @@ export async function GET(request: NextRequest) {
         if (!process.env.NOTION_API_KEY) {
             return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
         }
-        if (!creditCardId || !month || !year) {
-            return NextResponse.json({ error: "bankAccountId, month, and year are required query parameters." }, { status: 400 });
+        if (!creditCardId) {
+            return NextResponse.json({ error: "creditCardId is a required query parameter." }, { status: 400 });
         }
 
-        const { startDate, endDate } = getFromToDates(month, parseInt(year, 10));
-        const from = startDate.toISOString().split('T')[0];
-        const to = endDate.toISOString().split('T')[0];
+        let from = null;
+        let to = null;
+
+        if(month && year) {
+            const { startDate, endDate } = getFromToDates(month, parseInt(year, 10));
+            from = startDate.toISOString().split('T')[0];
+            to = endDate.toISOString().split('T')[0];
+        }
 
         const [expenseTransactions, incomeTransactions, investmentTransactions] = await Promise.all([
             // Fetch Expenses
