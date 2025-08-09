@@ -3,10 +3,10 @@
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { ExpenseBreakdownTable } from "@/components/dashboard/expense-breakdown-table";
-import { ExpensePieChart } from "@/components/dashboard/expense-pie-chart";
 import { MonthlySummaryChart } from "@/components/dashboard/monthly-summary-chart";
 import { MonthlyMoneyTable, type FinancialSnapshotItem } from "@/components/dashboard/monthly-money-table";
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog"; // Import new component
+import { InvestmentCalculatorDialog } from "@/components/dashboard/investment-calculator-dialog";
 import { AlertCircle } from "lucide-react";
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { Category, SubCategory, Account } from "@/components/dashboard/add-expense-dialog";
@@ -178,6 +178,9 @@ export default function DashboardPage() {
   const [isFetchingMoreTransactions, setIsFetchingMoreTransactions] = useState(false);
   const [transactionEntityType, setTransactionEntityType] = useState<'bank' | 'credit-card' | null>(null);
   const [transactionCategoryFilter, setTransactionCategoryFilter] = useState<string>('all');
+  
+  // State for investment calculator dialog
+  const [isInvestmentCalculatorOpen, setIsInvestmentCalculatorOpen] = useState(false);
   
   const availableYears = useMemo(() => getAvailableYears(), []);
   
@@ -376,7 +379,7 @@ export default function DashboardPage() {
 
     useEffect(() => {
     async function fetchTotalInvestments() {
-      setIsInvestmentsLoading(true); setInvestmentsError(null);
+      setIsTotalInvestmentsLoading(true); setTotalInvestmentsError(null);
       try {
         const res = await fetch(`/api/total-investments`);
         if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch total investments');
@@ -425,7 +428,7 @@ export default function DashboardPage() {
 
   // --- Event Handlers ---
   const handleViewBankTransactions = async (account: BankAccount) => {
-    setTransactionDialogTitle(`${account.name} Transactions`);
+    setTransactionDialogTitle(`All Transactions for ${account.name}`);
     setSelectedAccountId(account.id);
     setTransactionEntityType('bank');
     setTransactionPage(1);
@@ -467,7 +470,7 @@ export default function DashboardPage() {
   };
   
   const handleViewCreditCardTransactions = async (card: CreditCardAccount) => {
-    setTransactionDialogTitle(`${card.name} Transactions`);
+    setTransactionDialogTitle(`All Transactions for ${card.name}`);
     setSelectedAccountId(card.id);
     setTransactionEntityType('credit-card');
     setTransactionPage(1);
@@ -508,6 +511,7 @@ export default function DashboardPage() {
     setAllFetchedTransactions(sourceData);
     setTransactionPage(1);
     setTransactionCategoryFilter('all');
+    setTransactionEntityType(null);
   };
 
   // --- Memoized Data Transformations ---
@@ -528,19 +532,6 @@ export default function DashboardPage() {
     return groupTransactions(rawMonthlyInvestments, selectedInvestmentMonth, selectedInvestmentYear);
   }, [rawMonthlyInvestments, selectedInvestmentMonth, selectedInvestmentYear]);
 
-  const currentMonthExpensePieData = useMemo(() => {
-    const aggregated: { [key: string]: number } = {};
-    apiMonthlyExpenses.forEach(item => {
-      const value = parseCurrency(item.expense);
-      if (aggregated[item.category]) {
-        aggregated[item.category] += value;
-      } else {
-        aggregated[item.category] = value;
-      }
-    });
-    return Object.entries(aggregated).map(([name, value]) => ({ name, value, fill: 'hsl(var(--chart-2))' }));
-  }, [apiMonthlyExpenses]);
-  
   const financialSnapshotTableData = useMemo(() => {
     const monthIndex = monthOptions.findIndex(m => m.value === selectedSummaryDetailMonth);
     const summaryForMonth = apiSummaryData[monthIndex];
@@ -661,56 +652,57 @@ export default function DashboardPage() {
         </div>
 
         <div>
-          <h2 className="text-xl font-semibold mb-4">Monthly Expenses Overview</h2>
-          {isExpensesLoading && <p className="text-muted-foreground py-4">Loading expense data...</p>}
-          {renderError(expensesError, "expense data")}
-          {!isExpensesLoading && !expensesError && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <ExpenseBreakdownTable 
-                  title="Expense Breakdown" 
-                  selectedMonth={selectedExpenseMonth} 
-                  onMonthChange={setSelectedExpenseMonth} 
+          <h2 className="text-xl font-semibold mb-4">Monthly Overview</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                {isExpensesLoading && <p className="text-muted-foreground py-4">Loading expense data...</p>}
+                {renderError(expensesError, "expense data")}
+                {!isExpensesLoading && !expensesError && (
+                    <ExpenseBreakdownTable 
+                      key="expenses"
+                      title="Expense Breakdown" 
+                      selectedMonth={selectedExpenseMonth} 
+                      onMonthChange={setSelectedExpenseMonth} 
+                      months={monthOptions} 
+                      selectedYear={selectedExpenseYear} 
+                      onYearChange={setSelectedExpenseYear} 
+                      years={availableYears} 
+                      data={apiMonthlyExpenses}
+                      onViewTransactions={() => handleViewMonthlyTransactions(
+                        `${monthOptions.find(m => m.value === selectedExpenseMonth)?.label} ${selectedExpenseYear} Expenses`,
+                        rawMonthlyExpenses,
+                        'Expense'
+                      )}
+                    />
+                )}
+            </div>
+            <div>
+              {isIncomeLoading && <p className="text-muted-foreground py-4">Loading income data...</p>}
+              {renderError(incomeError, "income data")}
+              {!isIncomeLoading && !incomeError && (
+                <ExpenseBreakdownTable
+                  key="income"
+                  title="Income Breakdown" 
+                  selectedMonth={selectedIncomeMonth} 
+                  onMonthChange={setSelectedIncomeMonth} 
                   months={monthOptions} 
-                  selectedYear={selectedExpenseYear} 
-                  onYearChange={setSelectedExpenseYear} 
+                  selectedYear={selectedIncomeYear} 
+                  onYearChange={setSelectedIncomeYear} 
                   years={availableYears} 
-                  data={apiMonthlyExpenses}
+                  data={apiMonthlyIncome} 
+                  amountColumnHeaderText="Income" 
+                  amountColumnItemTextColorClassName="text-green-600 font-medium" 
+                  categoryTotalTextColorClassName="text-green-700 font-semibold" 
+                  grandTotalTextColorClassName="text-green-700"
                   onViewTransactions={() => handleViewMonthlyTransactions(
-                    `${monthOptions.find(m => m.value === selectedExpenseMonth)?.label} ${selectedExpenseYear} Expenses`,
-                    rawMonthlyExpenses,
-                    'Expense'
+                    `${monthOptions.find(m => m.value === selectedIncomeMonth)?.label} ${selectedIncomeYear} Income`,
+                    rawMonthlyIncome,
+                    'Income'
                   )}
                 />
-              </div>
-          <div>
-            <h2 className="text-xl font-semibold mb-4">Monthly Income Overview</h2>
-            {isIncomeLoading && <p className="text-muted-foreground py-4">Loading income data...</p>}
-            {renderError(incomeError, "income data")}
-            {!isIncomeLoading && !incomeError && (
-              <ExpenseBreakdownTable 
-                title="Income Breakdown" 
-                selectedMonth={selectedIncomeMonth} 
-                onMonthChange={setSelectedIncomeMonth} 
-                months={monthOptions} 
-                selectedYear={selectedIncomeYear} 
-                onYearChange={setSelectedIncomeYear} 
-                years={availableYears} 
-                data={apiMonthlyIncome} 
-                amountColumnHeaderText="Income" 
-                amountColumnItemTextColorClassName="text-green-600 font-medium" 
-                categoryTotalTextColorClassName="text-green-700 font-semibold" 
-                grandTotalTextColorClassName="text-green-700"
-                onViewTransactions={() => handleViewMonthlyTransactions(
-                  `${monthOptions.find(m => m.value === selectedIncomeMonth)?.label} ${selectedIncomeYear} Income`,
-                  rawMonthlyIncome,
-                  'Income'
-                )}
-              />
-            )}
-          </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -720,7 +712,8 @@ export default function DashboardPage() {
             {renderError(totalInvestmentsError, "investment data")}
               {!isTotalInvestmentsLoading && !totalInvestmentsError && (
               <ExpenseBreakdownTable 
-                title="Investment Breakdown" 
+                key="total-investments"
+                title="Total Investment Breakdown" 
                 data={totalInvestments.map(tx => ({
                   year: tx.date ? new Date(tx.date).getFullYear() : 0,
                   month: tx.date ? monthOptions[new Date(tx.date).getMonth()].value : '',
@@ -734,6 +727,7 @@ export default function DashboardPage() {
                 grandTotalTextColorClassName="text-primary" 
                 showSubCategoryColumn={false} 
                 showCategoryTotalRow={false}
+                onOpenCalculators={() => setIsInvestmentCalculatorOpen(true)}
               />
             )}
           </div>
@@ -743,6 +737,7 @@ export default function DashboardPage() {
             {renderError(investmentsError, "investment data")}
             {!isInvestmentsLoading && !investmentsError && (
               <ExpenseBreakdownTable 
+                key="monthly-investments"
                 title="Investment Breakdown" 
                 selectedMonth={selectedInvestmentMonth} 
                 onMonthChange={setSelectedInvestmentMonth} 
@@ -814,6 +809,13 @@ export default function DashboardPage() {
           setTransactionPage(1); // Reset page when filter changes
         }}
       />
+      <InvestmentCalculatorDialog 
+        open={isInvestmentCalculatorOpen}
+        onOpenChange={setIsInvestmentCalculatorOpen}
+        investmentAccounts={investmentCategories}
+      />
     </div>
   );
 }
+
+    

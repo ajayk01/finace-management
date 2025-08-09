@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { PieChart as PieChartIcon } from "lucide-react";
+import { PieChart as PieChartIcon, Calculator } from "lucide-react";
 import { ExpensePieChart } from "./expense-pie-chart";
 
 interface ExpenseItem {
@@ -52,6 +52,7 @@ interface ExpenseBreakdownTableProps {
   showSubCategoryColumn?: boolean;
   showCategoryTotalRow?: boolean;
   onViewTransactions?: () => void;
+  onOpenCalculators?: () => void;
 }
 
 interface CategorizedExpenseGroup {
@@ -81,6 +82,7 @@ export function ExpenseBreakdownTable({
   showSubCategoryColumn = true,
   showCategoryTotalRow = true,
   onViewTransactions,
+  onOpenCalculators,
 }: ExpenseBreakdownTableProps) {
 
   const [viewMode, setViewMode] = React.useState<'table' | 'chart'>('table');
@@ -146,7 +148,13 @@ export function ExpenseBreakdownTable({
         <CardTitle className="text-xl font-semibold whitespace-nowrap">{title}</CardTitle>
         <div className="flex flex-col space-y-2 w-full sm:flex-row sm:space-x-3 sm:space-y-0 sm:w-auto flex-shrink-0">
             {onViewTransactions && (
-                <Button variant="outline" size="sm" onClick={onViewTransactions}>View Transactions </Button>
+                <Button variant="outline" size="sm" onClick={onViewTransactions}>View Transactions</Button>
+            )}
+            {onOpenCalculators && (
+                <Button variant="outline" size="sm" onClick={onOpenCalculators}>
+                  <Calculator className="mr-2 h-4 w-4" />
+                  Calculators
+                </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setViewMode(prev => prev === 'table' ? 'chart' : 'table')}>
                 <PieChartIcon className="mr-2 h-4 w-4" />
