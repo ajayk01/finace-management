@@ -153,6 +153,12 @@ export default function DashboardPage() {
   const [selectedInvestmentYear, setSelectedInvestmentYear] = useState<number>(currentYear);
   const [investmentCategories, setInvestmentCategories] = useState<InvestmentCategory[]>([]);
 
+  // Total Investments state
+  const [isTotalInvestmentsLoading, setIsTotalInvestmentsLoading] = useState<boolean>(true);
+  const [totalInvestmentsError, setTotalInvestmentsError] = useState<string | null>(null);
+  const [totalInvestments, setTotalInvestments] = useState<Transaction[]>([]);
+
+
   // Summary Chart & Netflow State
   const [apiSummaryData, setApiSummaryData] = useState<SummaryDataItem[]>([]);
   const [isSummaryLoading, setIsSummaryLoading] = useState<boolean>(true);
@@ -367,6 +373,27 @@ export default function DashboardPage() {
     }
     fetchInvestments();
   }, [selectedInvestmentMonth, selectedInvestmentYear]);
+
+    useEffect(() => {
+    async function fetchTotalInvestments() {
+      setIsInvestmentsLoading(true); setInvestmentsError(null);
+      try {
+        const res = await fetch(`/api/total-investments`);
+        if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch total investments');
+        const data = await res.json();
+        // Assuming the new API returns raw transactions and categories
+        const rawTransactions = data.rawTransactions || [];
+        const categories = data.investmentAccounts || [];
+        setTotalInvestments(rawTransactions);
+        setInvestmentCategories(categories);
+      } catch (error) {
+        setTotalInvestmentsError(error instanceof Error ? error.message : "An unknown error occurred");
+      } finally {
+        setIsTotalInvestmentsLoading(false);
+      }
+    }
+    fetchTotalInvestments();
+  }, []);
 
   useEffect(() => {
     async function fetchSummaryData() {
@@ -656,14 +683,6 @@ export default function DashboardPage() {
                   )}
                 />
               </div>
-              <div>
-                <ExpensePieChart data={currentMonthExpensePieData} chartTitle="Selected Month Expense" chartDescription="Breakdown By Category" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <h2 className="text-xl font-semibold mb-4">Monthly Income Overview</h2>
             {isIncomeLoading && <p className="text-muted-foreground py-4">Loading income data...</p>}
@@ -687,6 +706,34 @@ export default function DashboardPage() {
                   rawMonthlyIncome,
                   'Income'
                 )}
+              />
+            )}
+          </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <h2 className="text-xl font-semibold mb-4">Total Investmented Details</h2>
+            {isTotalInvestmentsLoading && <p className="text-muted-foreground py-4">Loading total investment data...</p>}
+            {renderError(totalInvestmentsError, "investment data")}
+              {!isTotalInvestmentsLoading && !totalInvestmentsError && (
+              <ExpenseBreakdownTable 
+                title="Investment Breakdown" 
+                data={totalInvestments.map(tx => ({
+                  year: tx.date ? new Date(tx.date).getFullYear() : 0,
+                  month: tx.date ? monthOptions[new Date(tx.date).getMonth()].value : '',
+                  category: tx.category || 'Uncategorized',
+                  subCategory: tx.subCategory || 'Uncategorized',
+                  expense: `₹${tx.amount?.toFixed(2) ?? '0.00'}`
+                }))}
+                amountColumnHeaderText="Investment" 
+                amountColumnItemTextColorClassName="text-primary font-medium" 
+                categoryTotalTextColorClassName="text-primary font-semibold" 
+                grandTotalTextColorClassName="text-primary" 
+                showSubCategoryColumn={false} 
+                showCategoryTotalRow={false}
               />
             )}
           </div>

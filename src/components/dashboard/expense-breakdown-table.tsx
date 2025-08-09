@@ -15,6 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { PieChart as PieChartIcon } from "lucide-react";
+import { ExpensePieChart } from "./expense-pie-chart";
 
 interface ExpenseItem {
   year: number;
@@ -81,6 +83,8 @@ export function ExpenseBreakdownTable({
   onViewTransactions,
 }: ExpenseBreakdownTableProps) {
 
+  const [viewMode, setViewMode] = React.useState<'table' | 'chart'>('table');
+
   const { categorizedData, grandTotal } = React.useMemo(() => {
     if (!data || data.length === 0) {
       return { categorizedData: [], grandTotal: 0 };
@@ -125,6 +129,14 @@ export function ExpenseBreakdownTable({
 
     return { categorizedData: processedCategorizedData, grandTotal: calculatedGrandTotal };
   }, [data]);
+  
+  const pieChartData = React.useMemo(() => {
+      if (viewMode === 'table') return [];
+      return categorizedData.map(group => ({
+          name: group.categoryName,
+          value: group.categoryTotal,
+      }));
+  }, [categorizedData, viewMode]);
 
   const showSelectors = selectedMonth && onMonthChange && months && selectedYear !== undefined && onYearChange && years;
 
@@ -136,9 +148,13 @@ export function ExpenseBreakdownTable({
             {onViewTransactions && (
                 <Button variant="outline" size="sm" onClick={onViewTransactions}>View Transactions </Button>
             )}
+            <Button variant="outline" size="sm" onClick={() => setViewMode(prev => prev === 'table' ? 'chart' : 'table')}>
+                <PieChartIcon className="mr-2 h-4 w-4" />
+                {viewMode === 'table' ? 'Chart' : 'Table'}
+            </Button>
             {showSelectors && (
               <>
-                <Select value={selectedMonth} onValueChange={onMonthChange}>
+                <Select value={selectedMonth} onValueChange={(value) => { onMonthChange(value); setViewMode('table'); }}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select month" />
                   </SelectTrigger>
@@ -152,7 +168,7 @@ export function ExpenseBreakdownTable({
                 </Select>
                 <Select
                   value={selectedYear.toString()}
-                  onValueChange={(value) => onYearChange(parseInt(value, 10))}
+                  onValueChange={(value) => { onYearChange(parseInt(value, 10)); setViewMode('table'); }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select year" />
@@ -170,63 +186,67 @@ export function ExpenseBreakdownTable({
         </div>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="py-3 px-4">Category</TableHead>
-              {showSubCategoryColumn && <TableHead className="py-3 px-4">Sub-category</TableHead>}
-              <TableHead className="text-right py-3 px-4">{amountColumnHeaderText}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {categorizedData.length > 0 ? (
-              categorizedData.map((group) => (
-                <React.Fragment key={group.categoryName}>
-                  {group.items.map((item, itemIndex) => (
-                    <TableRow key={`${item.year}-${item.month}-${item.category}-${item.subCategory}-${itemIndex}`}>
-                      <TableCell className="font-medium py-3 px-4">{item.category}</TableCell>
-                      {showSubCategoryColumn && <TableCell className="py-3 px-4">{item.subCategory}</TableCell>}
-                      <TableCell className={cn("text-right py-3 px-4", amountColumnItemTextColorClassName)}>
-                        ₹{parseCurrency(item.expense).toFixed(2)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {showCategoryTotalRow && (
-                    <TableRow className="bg-muted/50">
-                      {showSubCategoryColumn ? (
-                        <>
-                          <TableCell className="py-2 px-4 font-semibold"></TableCell>
-                          <TableCell className="py-2 px-4 font-semibold text-right">{group.categoryName} Total</TableCell>
-                        </>
-                      ) : (
-                        <TableCell className="py-2 px-4 font-semibold text-right">{group.categoryName} Total</TableCell>
-                      )}
-                      <TableCell className={cn("text-right py-2 px-4", categoryTotalTextColorClassName)}>
-                        ₹{group.categoryTotal.toFixed(2)}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </React.Fragment>
-              ))
-            ) : (
+        {viewMode === 'table' ? (
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={showSubCategoryColumn ? 3 : 2} className="text-center py-10 text-muted-foreground">
-                  No data recorded for the selected month and year.
-                </TableCell>
+                <TableHead className="py-3 px-4">Category</TableHead>
+                {showSubCategoryColumn && <TableHead className="py-3 px-4">Sub-category</TableHead>}
+                <TableHead className="text-right py-3 px-4">{amountColumnHeaderText}</TableHead>
               </TableRow>
+            </TableHeader>
+            <TableBody>
+              {categorizedData.length > 0 ? (
+                categorizedData.map((group) => (
+                  <React.Fragment key={group.categoryName}>
+                    {group.items.map((item, itemIndex) => (
+                      <TableRow key={`${item.year}-${item.month}-${item.category}-${item.subCategory}-${itemIndex}`}>
+                        <TableCell className="font-medium py-3 px-4">{item.category}</TableCell>
+                        {showSubCategoryColumn && <TableCell className="py-3 px-4">{item.subCategory}</TableCell>}
+                        <TableCell className={cn("text-right py-3 px-4", amountColumnItemTextColorClassName)}>
+                          ₹{parseCurrency(item.expense).toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {showCategoryTotalRow && (
+                      <TableRow className="bg-muted/50">
+                        {showSubCategoryColumn ? (
+                          <>
+                            <TableCell className="py-2 px-4 font-semibold"></TableCell>
+                            <TableCell className="py-2 px-4 font-semibold text-right">{group.categoryName} Total</TableCell>
+                          </>
+                        ) : (
+                          <TableCell className="py-2 px-4 font-semibold text-right">{group.categoryName} Total</TableCell>
+                        )}
+                        <TableCell className={cn("text-right py-2 px-4", categoryTotalTextColorClassName)}>
+                          ₹{group.categoryTotal.toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={showSubCategoryColumn ? 3 : 2} className="text-center py-10 text-muted-foreground">
+                    No data recorded for the selected month and year.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+            {categorizedData.length > 0 && (
+              <TableFooter>
+                <TableRow className="bg-card font-bold text-base">
+                  <TableCell colSpan={showSubCategoryColumn ? 2 : 1} className="text-right py-3 px-4">Grand Total</TableCell>
+                  <TableCell className={cn("text-right py-3 px-4", grandTotalTextColorClassName)}>
+                    ₹{grandTotal.toFixed(2)}
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
             )}
-          </TableBody>
-          {categorizedData.length > 0 && (
-            <TableFooter>
-              <TableRow className="bg-card font-bold text-base">
-                <TableCell colSpan={showSubCategoryColumn ? 2 : 1} className="text-right py-3 px-4">Grand Total</TableCell>
-                <TableCell className={cn("text-right py-3 px-4", grandTotalTextColorClassName)}>
-                  ₹{grandTotal.toFixed(2)}
-                </TableCell>
-              </TableRow>
-            </TableFooter>
-          )}
-        </Table>
+          </Table>
+        ) : (
+            <ExpensePieChart data={pieChartData} chartTitle="" chartDescription="" />
+        )}
       </CardContent>
     </Card>
   );
