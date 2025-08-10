@@ -53,11 +53,9 @@ export async function GET() {
         groupsWithMembers.forEach(group => {
             group.members.forEach((member: { id: string; name: string }) => {
                 userIdToNameMap.set(member.id, member.name);
-                console.log(`Mapped Splitwise user ID ${member.id} to Notion user name "${member.name}"`);
             });
         });
 
-        console.log('📋 Created user ID to name mapping:', userIdToNameMap);
 
         return NextResponse.json({ groups: groupsWithMembers });
 

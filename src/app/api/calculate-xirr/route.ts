@@ -70,9 +70,7 @@ export async function POST(request: NextRequest) {
 
         // 2. Fetch the current value of the investment account
         const accountPage = await notion.pages.retrieve({ page_id: investmentAccountId });
-        console.log(accountPage)
         const currentValue = (accountPage as any).properties?.['Current Value'].number || 0;
-        console.log("the current value is:", currentValue);
         // 3. Add the current value as the final "cash flow" transaction
         transactions.push({
             amount: currentValue, // Current value is a cash inflow
@@ -83,7 +81,6 @@ export async function POST(request: NextRequest) {
         // The xirr library can throw an error if it can't find a root
         try {
             const result = xirr(transactions);
-            console.log("XIRR calculation result:", result);
             return NextResponse.json({ xirr: result });
         } catch(e) {
             console.error("XIRR calculation error:", e);
