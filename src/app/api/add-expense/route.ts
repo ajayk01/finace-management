@@ -13,11 +13,13 @@ const CURRENT_USER_ID = process.env.SPLITWISE_CURRENT_USER_ID || "57391213"; // 
 const userMapping = new Map<string, string>();
 
 // Splitwise API function using pure HTTP requests
-async function addSplitwiseExpense({ amount, description, groupId, userIds }: {
+async function addSplitwiseExpense({ amount, description, groupId, userIds, splitType, customAmounts }: {
     amount: number;
     description: string;
     groupId: string;
     userIds: string[];
+    splitType?: 'equal' | 'custom';
+    customAmounts?: Record<string, number>;
 }) {
     const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
     
@@ -26,39 +28,71 @@ async function addSplitwiseExpense({ amount, description, groupId, userIds }: {
         throw new Error('Splitwise API key not configured');
     }
 
-    // Calculate equal split amount
-    const totalUsers = userIds.length
-    const splitAmount1 = (amount / totalUsers);
-    const splitAmount = splitAmount1.toFixed(2); // Ensure it's a string with 2 decimal places
-
     // Create form data for Splitwise API
     const formData = new URLSearchParams();
     formData.append('cost', amount.toString());
     formData.append('description', description);
     formData.append('group_id', groupId);
-    formData.append('split_equally', 'true');
     formData.append('currency_code', 'INR'); // Adjust currency as needed
     formData.append('details', "string");
     
-    // Current user (who paid the expense)
-    formData.append('users__0__user_id', CURRENT_USER_ID);
-    formData.append('users__0__paid_share', amount.toString());
-    if (userIds.includes(CURRENT_USER_ID)) 
-    {
-        formData.append('users__0__owed_share', splitAmount);
-    } 
+    // Determine if we're using equal split or custom amounts
+    const useEqualSplit = splitType === 'equal' || !splitType || !customAmounts;
+    formData.append('split_equally', useEqualSplit ? 'true' : 'false');
     
-    userIds.forEach((userId, index) => 
-    {
-        if(userId.includes(CURRENT_USER_ID)) 
+    if (useEqualSplit) {
+        // Equal split logic
+        const totalUsers = userIds.length;
+        const splitAmount = (amount / totalUsers).toFixed(2);
+        
+        // Current user (who paid the expense)
+        formData.append('users__0__user_id', CURRENT_USER_ID);
+        formData.append('users__0__paid_share', amount.toString());
+        if (userIds.includes(CURRENT_USER_ID)) 
         {
-            return;    
+            formData.append('users__0__owed_share', splitAmount);
         } 
-        const userIndex = index + 1;
-        formData.append(`users__${userIndex}__user_id`, userId);
-        formData.append(`users__${userIndex}__paid_share`, '0.00');
-        formData.append(`users__${userIndex}__owed_share`, splitAmount);
-    });
+        
+        userIds.forEach((userId, index) => 
+        {
+            if(userId.includes(CURRENT_USER_ID)) 
+            {
+                return;    
+            } 
+            const userIndex = index + 1;
+            formData.append(`users__${userIndex}__user_id`, userId);
+            formData.append(`users__${userIndex}__paid_share`, '0.00');
+            formData.append(`users__${userIndex}__owed_share`, splitAmount);
+        });
+    } else {
+        // Custom amounts logic
+        let userIndex = 0;
+        
+        // Current user (who paid the expense)
+        formData.append(`users__${userIndex}__user_id`, CURRENT_USER_ID);
+        formData.append(`users__${userIndex}__paid_share`, amount.toString());
+        
+        // Set current user's owed share if they're in the split
+        if (userIds.includes(CURRENT_USER_ID) && customAmounts[CURRENT_USER_ID]) {
+            formData.append(`users__${userIndex}__owed_share`, customAmounts[CURRENT_USER_ID].toFixed(2));
+        } else {
+            formData.append(`users__${userIndex}__owed_share`, '0.00');
+        }
+        userIndex++;
+        
+        // Add other users with their custom amounts
+        userIds.forEach((userId) => {
+            if(userId.includes(CURRENT_USER_ID)) {
+                return;    
+            }
+            
+            const owedAmount = customAmounts[userId] || 0;
+            formData.append(`users__${userIndex}__user_id`, userId);
+            formData.append(`users__${userIndex}__paid_share`, '0.00');
+            formData.append(`users__${userIndex}__owed_share`, owedAmount.toFixed(2));
+            userIndex++;
+        });
+    }
 
     const response = await fetch('https://secure.splitwise.com/api/v3.0/create_expense', {
         method: 'POST',
@@ -186,6 +220,8 @@ const addExpenseSchema = z.object({
   splitwiseGroupId: z.string().optional(),
   splitwiseUserIds: z.array(z.string()).optional(),
   splitwiseGroupName: z.string().optional(),
+  splitType: z.enum(['equal', 'custom']).optional(),
+  customAmounts: z.record(z.string(), z.number()).optional(),
 });
 
 
@@ -208,7 +244,15 @@ export async function POST(request: NextRequest)
         const body = await request.json();
         const parsedData = addExpenseSchema.parse(body);
 
-        let { amount, date, description, account, categoryId, subCategoryId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId } = parsedData;
+        let { amount, date, description, account, categoryId, subCategoryId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId, splitType, customAmounts } = parsedData;
+
+        // Validate custom amounts if split type is custom
+        if (includeSplitwise && splitType === 'custom' && customAmounts && splitwiseUserIds) {
+            const totalCustomAmount = Object.values(customAmounts).reduce((sum, amt) => sum + amt, 0);
+            if (Math.abs(totalCustomAmount - amount) > 0.01) {
+                return NextResponse.json({ error: 'Custom amounts must total the expense amount.' }, { status: 400 });
+            }
+        }
 
 
         // Fetch Splitwise user mapping for enhanced descriptions
@@ -229,19 +273,21 @@ export async function POST(request: NextRequest)
                     resultForOthersId = result.id;
                 
                
-                // await addSplitwiseExpense({
-                //     amount,
-                //     description: parsedData.description, // Use original description for Splitwise
-                //     groupId: splitwiseGroupId,
-                //     userIds: splitwiseUserIds
-                // });
-                const totalUsers = splitwiseUserIds.length
-                const splitAmount = (amount / totalUsers).toFixed(2);
+                await addSplitwiseExpense({
+                    amount,
+                    description: parsedData.description, // Use original description for Splitwise
+                    groupId: splitwiseGroupId,
+                    userIds: splitwiseUserIds,
+                    splitType: splitType || 'equal',
+                    customAmounts: customAmounts
+                });
+                
                 const splitwiseDbId = process.env.SPLITWISE_DB_ID;
                 if (!splitwiseDbId) 
                 {
                     throw new Error('Splitwise database ID is not configured');
                 }
+                
                 await Promise.all(splitwiseUserIds.map(async (userId, index) => 
                 {
                     if(userId.includes(CURRENT_USER_ID))
@@ -255,8 +301,17 @@ export async function POST(request: NextRequest)
                             throw new Error("UserId not found");
                         }
                         
+                        // Calculate split amount based on split type
+                        let splitAmount: number;
+                        if (splitType === 'custom' && customAmounts) {
+                            splitAmount = customAmounts[userId] || 0;
+                        } else {
+                            // Default to equal split
+                            splitAmount = amount / splitwiseUserIds.length;
+                        }
+                        
                         const notionSplitProp = await fetchNotionSplitwiseProp({
-                            amount: Number(splitAmount), 
+                            amount: Number(splitAmount.toFixed(2)), 
                             description, 
                             notionFriendId: notionUserId, 
                             expenseId: resultForOthersId

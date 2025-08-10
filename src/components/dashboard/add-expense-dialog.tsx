@@ -52,6 +52,8 @@ const expenseSchemaBase = z.object({
   includeSplitwise: z.boolean().default(false),
   splitwiseGroupId: z.string().optional(),
   splitwiseUserIds: z.array(z.string()).optional(),
+  splitType: z.enum(['equal', 'custom']).default('equal'),
+  customAmounts: z.record(z.string(), z.coerce.number()).optional(),
 });
 
 
@@ -106,6 +108,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
   const [isSplitwiseLoading, setIsSplitwiseLoading] = useState(false);
   const [splitwiseError, setSplitwiseError] = useState<string | null>(null);
   const [splitwiseUsers, setSplitwiseUsers] = useState<SplitwiseUser[]>([]);
+  const [customAmounts, setCustomAmounts] = useState<Record<string, number>>({});
 
   // Dynamically create the refined schema inside the component
   const expenseSchema = expenseSchemaBase.refine(
@@ -122,6 +125,19 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
       message: 'Sub-category is required.',
       path: ['subCategoryId'],
     }
+  ).refine(
+    (data) => {
+      // Validate custom amounts if split type is custom
+      if (data.includeSplitwise && data.splitType === 'custom' && data.splitwiseUserIds && data.customAmounts) {
+        const totalCustomAmount = Object.values(data.customAmounts).reduce((sum, amount) => sum + (isNaN(amount) ? 0 : amount), 0);
+        return Math.abs(totalCustomAmount - data.amount) < 0.01; // Allow for small floating point differences
+      }
+      return true;
+    },
+    {
+      message: 'Custom amounts must total the expense amount.',
+      path: ['customAmounts'],
+    }
   );
 
   const form = useForm<ExpenseFormValues>({
@@ -136,12 +152,16 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
       includeSplitwise: false,
       splitwiseGroupId: '',
       splitwiseUserIds: [],
+      splitType: 'equal',
+      customAmounts: {},
     },
   });
 
   const selectedCategoryId = form.watch('categoryId');
   const selectedSplitwiseGroupId = form.watch('splitwiseGroupId');
   const selectedSplitwiseUsers = form.watch('splitwiseUserIds') || [];
+  const splitType = form.watch('splitType');
+  const totalAmount = form.watch('amount');
 
   useEffect(() => {
     if (selectedCategoryId) {
@@ -162,10 +182,27 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
         const group = splitwiseGroups.find(g => g.id === selectedSplitwiseGroupId);
         setSplitwiseUsers(group?.members || []);
         form.setValue('splitwiseUserIds', []); // Reset users when group changes
+        // Reset custom amounts and split type when group changes
+        setCustomAmounts({});
+        form.setValue('customAmounts', {});
+        form.setValue('splitType', 'equal');
     } else {
         setSplitwiseUsers([]);
     }
   }, [selectedSplitwiseGroupId, splitwiseGroups, form]);
+
+  // Reset custom amounts when users change
+  useEffect(() => {
+    if (splitType === 'custom' && selectedSplitwiseUsers.length > 0 && totalAmount > 0) {
+      const equalAmount = totalAmount / selectedSplitwiseUsers.length;
+      const newCustomAmounts: Record<string, number> = {};
+      selectedSplitwiseUsers.forEach(userId => {
+        newCustomAmounts[userId] = customAmounts[userId] || Number(equalAmount.toFixed(2));
+      });
+      setCustomAmounts(newCustomAmounts);
+      form.setValue('customAmounts', newCustomAmounts);
+    }
+  }, [selectedSplitwiseUsers, splitType, totalAmount]);
 
   const handleClose = () => {
     onOpenChange(false);
@@ -173,6 +210,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
     setTimeout(() => {
       form.reset();
       setStep(1);
+      setCustomAmounts({});
     }, 200);
   };
 
@@ -203,6 +241,8 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
         payload.splitwiseGroupId = values.splitwiseGroupId;
         payload.splitwiseUserIds = values.splitwiseUserIds;
         payload.splitwiseGroupName = splitwiseGroups.find(g => g.id === values.splitwiseGroupId)?.name;
+        payload.splitType = values.splitType;
+        payload.customAmounts = values.customAmounts;
     }
 
 
@@ -251,6 +291,48 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
         setIsLoading(false);
     }
   };
+
+  // Helper functions for custom amounts
+  const updateCustomAmount = (userId: string, amount: number) => {
+    const validAmount = isNaN(amount) ? 0 : amount;
+    const newCustomAmounts = { ...customAmounts, [userId]: validAmount };
+    setCustomAmounts(newCustomAmounts);
+    form.setValue('customAmounts', newCustomAmounts, { shouldValidate: true });
+  };
+
+  const calculateRemainingAmount = () => {
+    if (!customAmounts || Object.keys(customAmounts).length === 0) return totalAmount;
+    const totalCustomAmount = Object.values(customAmounts).reduce((sum, amount) => sum + (isNaN(amount) ? 0 : amount), 0);
+    return totalAmount - totalCustomAmount;
+  };
+
+  const getTotalCustomAmount = () => {
+    if (!customAmounts || Object.keys(customAmounts).length === 0) return 0;
+    return Object.values(customAmounts).reduce((sum, amount) => sum + (isNaN(amount) ? 0 : amount), 0);
+  };
+
+  const handleSplitTypeChange = (newSplitType: 'equal' | 'custom') => {
+    try {
+      form.setValue('splitType', newSplitType);
+      if (newSplitType === 'equal') {
+        setCustomAmounts({});
+        form.setValue('customAmounts', {});
+      } else {
+        // Initialize custom amounts with equal split as starting point
+        if (selectedSplitwiseUsers.length > 0 && totalAmount > 0) {
+          const equalAmount = totalAmount / selectedSplitwiseUsers.length;
+          const initialAmounts: Record<string, number> = {};
+          selectedSplitwiseUsers.forEach(userId => {
+            initialAmounts[userId] = Number(equalAmount.toFixed(2));
+          });
+          setCustomAmounts(initialAmounts);
+          form.setValue('customAmounts', initialAmounts);
+        }
+      }
+    } catch (error) {
+      console.error('Error changing split type:', error);
+    }
+  };
   
   const handleUserMultiSelect = (userId: string) => {
     const currentSelection = form.getValues('splitwiseUserIds') || [];
@@ -258,6 +340,21 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
       ? currentSelection.filter(id => id !== userId)
       : [...currentSelection, userId];
     form.setValue('splitwiseUserIds', newSelection, { shouldValidate: true });
+
+    // Update custom amounts when users change
+    if (splitType === 'custom') {
+      const newCustomAmounts = { ...customAmounts };
+      if (newSelection.includes(userId) && !currentSelection.includes(userId)) {
+        // User was added - set equal share of remaining
+        const equalAmount = totalAmount / Math.max(newSelection.length, 1);
+        newCustomAmounts[userId] = equalAmount;
+      } else if (!newSelection.includes(userId) && currentSelection.includes(userId)) {
+        // User was removed - delete their amount
+        delete newCustomAmounts[userId];
+      }
+      setCustomAmounts(newCustomAmounts);
+      form.setValue('customAmounts', newCustomAmounts, { shouldValidate: true });
+    }
   }
 
   const handleGoToSplitwise = async () => {
@@ -302,6 +399,10 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
         </div>
       );
     }
+
+    const totalCustomAmount = getTotalCustomAmount();
+    const remainingAmount = calculateRemainingAmount();
+    const isCustomAmountValid = Math.abs(remainingAmount) < 0.01;
 
     return (
       <div className="space-y-4 rounded-md border p-4">
@@ -376,6 +477,109 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
               </div>
               <FormMessage />
           </FormItem>
+
+          {selectedSplitwiseUsers.length > 0 && (
+            <FormField
+              control={form.control}
+              name="splitType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Split Type</FormLabel>
+                  <Select 
+                    onValueChange={(value: 'equal' | 'custom') => {
+                      field.onChange(value);
+                      handleSplitTypeChange(value);
+                    }} 
+                    value={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select split type" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="equal">Equal Split</SelectItem>
+                      <SelectItem value="custom">Custom Amounts</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+
+          {splitType === 'custom' && selectedSplitwiseUsers.length > 0 && (
+            <FormField
+              control={form.control}
+              name="customAmounts"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Custom Amounts</FormLabel>
+                  <div className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3">
+                    {selectedSplitwiseUsers.map(userId => {
+                      const user = splitwiseUsers.find(u => u.id === userId);
+                      return (
+                        <div key={userId} className="flex items-center justify-between space-x-2">
+                          <span className="text-sm font-medium min-w-0 flex-1">{user?.name}</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={customAmounts[userId] || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === '') {
+                                updateCustomAmount(userId, 0);
+                              } else {
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  updateCustomAmount(userId, numValue);
+                                }
+                              }
+                            }}
+                            className="w-24 text-right"
+                            placeholder="0.00"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="text-sm space-y-1">
+                    <div className="flex justify-between">
+                      <span>Total Amount:</span>
+                      <span className="font-medium">₹{totalAmount}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Allocated:</span>
+                      <span className="font-medium">₹{totalCustomAmount.toFixed(2)}</span>
+                    </div>
+                    <div className={cn(
+                      "flex justify-between font-medium",
+                      isCustomAmountValid ? "text-green-600" : "text-red-600"
+                    )}>
+                      <span>Remaining:</span>
+                      <span>₹{remainingAmount.toFixed(2)}</span>
+                    </div>
+                    {!isCustomAmountValid && (
+                      <p className="text-red-600 text-xs">
+                        Custom amounts must total exactly ₹{totalAmount}
+                      </p>
+                    )}
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+
+          {splitType === 'equal' && selectedSplitwiseUsers.length > 0 && (
+            <div className="text-sm text-muted-foreground border rounded-md p-3">
+              <div className="flex justify-between">
+                <span>Amount per person:</span>
+                <span className="font-medium">₹{(totalAmount / selectedSplitwiseUsers.length).toFixed(2)}</span>
+              </div>
+            </div>
+          )}
       </div>
     );
   };
