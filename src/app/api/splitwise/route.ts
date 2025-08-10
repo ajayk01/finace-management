@@ -21,7 +21,7 @@ async function fetchSplitwise(endpoint: string, apiKey: string) {
     return response.json();
 }
 
-export async function GET() {
+export async function GET() { 
     const  SPLITWISE_API_KEY  = "nhYfFpWs6ZpcgnlCUDbySBXCleWqbsi12sSC8mjP";
 
     // SPLITWISE_CONSUMER_KEY and SPLITWISE_CONSUMER_SECRET are not needed for API Key auth
