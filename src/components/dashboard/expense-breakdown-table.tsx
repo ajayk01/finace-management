@@ -24,6 +24,7 @@ interface ExpenseItem {
   category: string;
   subCategory: string;
   expense: string;
+  xirr?: number; // Add XIRR as optional property
 }
 
 interface MonthOption {
@@ -51,6 +52,9 @@ interface ExpenseBreakdownTableProps {
   grandTotalTextColorClassName?: string;
   showSubCategoryColumn?: boolean;
   showCategoryTotalRow?: boolean;
+  showXirrColumn?: boolean; // Add XIRR column toggle
+  isXirrLoading?: boolean; // Add loading state for XIRR
+  hasXirrBeenCalculated?: boolean; // Add state to track if XIRR has been calculated
   onViewTransactions?: () => void;
   onOpenCalculators?: () => void;
 }
@@ -79,8 +83,11 @@ export function ExpenseBreakdownTable({
   amountColumnItemTextColorClassName = "text-red-600 font-medium",
   categoryTotalTextColorClassName = "text-red-700 font-semibold",
   grandTotalTextColorClassName = "text-red-700",
-  showSubCategoryColumn = true,
+  showSubCategoryColumn = false,
   showCategoryTotalRow = true,
+  showXirrColumn = false,
+  isXirrLoading = false,
+  hasXirrBeenCalculated = false,
   onViewTransactions,
   onOpenCalculators,
 }: ExpenseBreakdownTableProps) {
@@ -153,7 +160,7 @@ export function ExpenseBreakdownTable({
             {onOpenCalculators && (
                 <Button variant="outline" size="sm" onClick={onOpenCalculators}>
                   <Calculator className="mr-2 h-4 w-4" />
-                  Calculators
+                  {showXirrColumn ? 'Calculate XIRR' : 'Calculators'}
                 </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setViewMode(prev => prev === 'table' ? 'chart' : 'table')}>
@@ -201,6 +208,7 @@ export function ExpenseBreakdownTable({
                 <TableHead className="py-3 px-4">Category</TableHead>
                 {showSubCategoryColumn && <TableHead className="py-3 px-4">Sub-category</TableHead>}
                 <TableHead className="text-right py-3 px-4">{amountColumnHeaderText}</TableHead>
+                {showXirrColumn && <TableHead className="text-right py-3 px-4">XIRR (%)</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -214,6 +222,27 @@ export function ExpenseBreakdownTable({
                         <TableCell className={cn("text-right py-3 px-4", amountColumnItemTextColorClassName)}>
                           ₹{parseCurrency(item.expense).toFixed(2)}
                         </TableCell>
+                        {showXirrColumn && (
+                          <TableCell className="text-right py-3 px-4">
+                            {item.xirr !== undefined ? (
+                              <span className={item.xirr >= 0 ? "text-green-600" : "text-red-600"}>
+                                {item.xirr.toFixed(2)}%
+                              </span>
+                            ) : isXirrLoading ? (
+                              <span className="text-muted-foreground animate-pulse">
+                                Calculating...
+                              </span>
+                            ) : hasXirrBeenCalculated ? (
+                              <span className="text-muted-foreground text-xs">
+                                No data
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">
+                                N/A
+                              </span>
+                            )}
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                     {showCategoryTotalRow && (
@@ -229,13 +258,14 @@ export function ExpenseBreakdownTable({
                         <TableCell className={cn("text-right py-2 px-4", categoryTotalTextColorClassName)}>
                           ₹{group.categoryTotal.toFixed(2)}
                         </TableCell>
+                        {showXirrColumn && <TableCell className="py-2 px-4"></TableCell>}
                       </TableRow>
                     )}
                   </React.Fragment>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={showSubCategoryColumn ? 3 : 2} className="text-center py-10 text-muted-foreground">
+                  <TableCell colSpan={showSubCategoryColumn ? (showXirrColumn ? 4 : 3) : (showXirrColumn ? 3 : 2)} className="text-center py-10 text-muted-foreground">
                     No data recorded for the selected month and year.
                   </TableCell>
                 </TableRow>
@@ -248,6 +278,7 @@ export function ExpenseBreakdownTable({
                   <TableCell className={cn("text-right py-3 px-4", grandTotalTextColorClassName)}>
                     ₹{grandTotal.toFixed(2)}
                   </TableCell>
+                  {showXirrColumn && <TableCell className="py-3 px-4"></TableCell>}
                 </TableRow>
               </TableFooter>
             )}

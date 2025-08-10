@@ -157,6 +157,9 @@ export default function DashboardPage() {
   const [isTotalInvestmentsLoading, setIsTotalInvestmentsLoading] = useState<boolean>(true);
   const [totalInvestmentsError, setTotalInvestmentsError] = useState<string | null>(null);
   const [totalInvestments, setTotalInvestments] = useState<Transaction[]>([]);
+  const [xirrData, setXirrData] = useState<Record<string, number>>({});
+  const [isXirrLoading, setIsXirrLoading] = useState<boolean>(false);
+  const [hasXirrBeenCalculated, setHasXirrBeenCalculated] = useState<boolean>(false);
 
 
   // Summary Chart & Netflow State
@@ -211,6 +214,50 @@ export default function DashboardPage() {
       } finally {
           setIsCreditCardDetailsLoading(false);
       }
+  }, []);
+
+  const calculateXIRRForCategory = useCallback(async (categoryId: string): Promise<number | undefined> => {
+    try {
+      const res = await fetch('/api/calculate-xirr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ investmentAccountId: categoryId }),
+      });
+      
+      if (!res.ok) {
+        console.warn(`Failed to calculate XIRR for category ${categoryId}`);
+        return undefined;
+      }
+      
+      const data = await res.json();
+      return data.xirr ? (data.xirr * 100) : undefined; // Convert to percentage
+    } catch (error) {
+      console.warn(`Error calculating XIRR for category ${categoryId}:`, error);
+      return undefined;
+    }
+  }, []);
+
+  const getXIRRForTransaction = useCallback((transaction: Transaction): number | undefined => {
+    // Find the investment category that matches this transaction's category
+    const matchingCategory = investmentCategories.find(cat => cat.name === transaction.category);
+    if (!matchingCategory) return undefined;
+    
+    return xirrData[matchingCategory.id];
+  }, [investmentCategories, xirrData]);
+
+  const handleCalculateXIRR = useCallback(async () => {
+    // Open the investment calculator dialog instead of directly calculating
+    setIsInvestmentCalculatorOpen(true);
+  }, []);
+
+  const handleXirrCalculated = useCallback((accountId: string, xirr: number) => {
+    setXirrData(prev => ({
+      ...prev,
+      [accountId]: xirr
+    }));
+    setHasXirrBeenCalculated(true);
   }, []);
   
   const fetchExpenses = useCallback(async (month: string, year: number) => {
@@ -719,7 +766,8 @@ export default function DashboardPage() {
                   month: tx.date ? monthOptions[new Date(tx.date).getMonth()].value : '',
                   category: tx.category || 'Uncategorized',
                   subCategory: tx.subCategory || 'Uncategorized',
-                  expense: `₹${tx.amount?.toFixed(2) ?? '0.00'}`
+                  expense: `₹${tx.amount?.toFixed(2) ?? '0.00'}`,
+                  xirr: getXIRRForTransaction(tx) // Use calculated XIRR data
                 }))}
                 amountColumnHeaderText="Investment" 
                 amountColumnItemTextColorClassName="text-primary font-medium" 
@@ -727,7 +775,10 @@ export default function DashboardPage() {
                 grandTotalTextColorClassName="text-primary" 
                 showSubCategoryColumn={false} 
                 showCategoryTotalRow={false}
-                onOpenCalculators={() => setIsInvestmentCalculatorOpen(true)}
+                showXirrColumn={true} // Enable XIRR column
+                isXirrLoading={isXirrLoading} // Pass XIRR loading state
+                hasXirrBeenCalculated={hasXirrBeenCalculated} // Pass calculated state
+                onOpenCalculators={handleCalculateXIRR} // Open calculator dialog when clicked
               />
             )}
           </div>
@@ -813,6 +864,7 @@ export default function DashboardPage() {
         open={isInvestmentCalculatorOpen}
         onOpenChange={setIsInvestmentCalculatorOpen}
         investmentAccounts={investmentCategories}
+        onXirrCalculated={handleXirrCalculated}
       />
     </div>
   );
