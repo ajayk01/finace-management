@@ -715,6 +715,7 @@ export default function DashboardPage() {
                       onYearChange={setSelectedExpenseYear} 
                       years={availableYears} 
                       data={apiMonthlyExpenses}
+                      showSubCategoryColumn={true}
                       onViewTransactions={() => handleViewMonthlyTransactions(
                         `${monthOptions.find(m => m.value === selectedExpenseMonth)?.label} ${selectedExpenseYear} Expenses`,
                         rawMonthlyExpenses,
@@ -741,6 +742,7 @@ export default function DashboardPage() {
                   amountColumnItemTextColorClassName="text-green-600 font-medium" 
                   categoryTotalTextColorClassName="text-green-700 font-semibold" 
                   grandTotalTextColorClassName="text-green-700"
+                  showSubCategoryColumn={true}
                   onViewTransactions={() => handleViewMonthlyTransactions(
                     `${monthOptions.find(m => m.value === selectedIncomeMonth)?.label} ${selectedIncomeYear} Income`,
                     rawMonthlyIncome,
