@@ -11,6 +11,8 @@ import { AlertCircle } from "lucide-react";
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { Category, SubCategory, Account } from "@/components/dashboard/add-expense-dialog";
 import type { InvestmentCategory } from "@/components/dashboard/add-investment-dialog";
+import { SplitwiseDialog } from "@/components/dashboard/splitwise-dialog";
+import type { FriendBalance } from "@/components/dashboard/splitwise-dialog";
 
 
 const monthOptions = [
@@ -185,6 +187,11 @@ export default function DashboardPage() {
   // State for investment calculator dialog
   const [isInvestmentCalculatorOpen, setIsInvestmentCalculatorOpen] = useState(false);
   
+  // State for Splitwise dialog
+  const [isSplitwiseDialogOpen, setIsSplitwiseDialogOpen] = useState(false);
+  const [isFriendsBalanceLoading, setIsFriendsBalanceLoading] = useState(false);
+  const [friendsBalanceError, setFriendsBalanceError] = useState<string | null>(null);
+  const [friendsBalance, setFriendsBalance] = useState<FriendBalance[]>([]);
   const availableYears = useMemo(() => getAvailableYears(), []);
   
   // --- Data Fetching Functions ---
@@ -472,8 +479,34 @@ export default function DashboardPage() {
     fetchSummaryData();
   }, [selectedSummaryYear]);
 
+  const fetchFriendsBalance = useCallback(async (forceRefresh: boolean = false) => {
+    setIsFriendsBalanceLoading(true);
+    setFriendsBalanceError(null);
+    try {
+      const url = forceRefresh ? '/api/friends-balance?refresh=true' : '/api/friends-balance';
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error('Failed to fetch friends balance');
+      }
+      const data = await res.json();
+      setFriendsBalance(data.friends || []);
+    } catch (error) {
+      setFriendsBalanceError(error instanceof Error ? error.message : "An unknown error occurred");
+    } finally {
+      setIsFriendsBalanceLoading(false);
+    }
+  }, []);
 
   // --- Event Handlers ---
+  const handleOpenSplitwiseDialog = useCallback(async () => {
+    setIsSplitwiseDialogOpen(true);
+    await fetchFriendsBalance();
+  }, [fetchFriendsBalance]);
+
+  const handleRefreshSplitwiseData = useCallback(async () => {
+    await fetchFriendsBalance(true); // Force refresh
+  }, [fetchFriendsBalance]);
+
   const handleViewBankTransactions = async (account: BankAccount) => {
     setTransactionDialogTitle(`All Transactions for ${account.name}`);
     setSelectedAccountId(account.id);
@@ -663,6 +696,7 @@ export default function DashboardPage() {
         onExpenseAdded={handleExpenseAdded}
         onIncomeAdded={handleIncomeAdded}
         onInvestmentAdded={handleInvestmentAdded}
+        onOpenSplitwiseDialog={handleOpenSplitwiseDialog}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -867,6 +901,14 @@ export default function DashboardPage() {
         onOpenChange={setIsInvestmentCalculatorOpen}
         investmentAccounts={investmentCategories}
         onXirrCalculated={handleXirrCalculated}
+      />
+      <SplitwiseDialog
+        open={isSplitwiseDialogOpen}
+        onOpenChange={setIsSplitwiseDialogOpen}
+        data={friendsBalance}
+        isLoading={isFriendsBalanceLoading}
+        error={friendsBalanceError}
+        onRefresh={handleRefreshSplitwiseData}
       />
     </div>
   );

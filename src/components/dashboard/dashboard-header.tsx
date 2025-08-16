@@ -17,6 +17,7 @@ import { AddExpenseDialog } from './add-expense-dialog';
 import { AddIncomeDialog } from './add-income-dialog';
 import { AddInvestmentDialog } from './add-investment-dialog';
 import type { Category, SubCategory, Account } from './add-expense-dialog';
+import type { SplitwiseGroup } from './add-expense-dialog';
 import type { InvestmentCategory } from './add-investment-dialog';
 import type { Transaction } from '@/app/page';
 
@@ -35,19 +36,22 @@ interface DashboardHeaderProps {
   onExpenseAdded: (newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
   onIncomeAdded: (newIncome: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
   onInvestmentAdded: (newInvestment: Transaction, fromAccountId: string) => void;
+  
+  onOpenSplitwiseDialog: () => void;
 }
 
 export function DashboardHeader({ 
-  expenseCategories, 
-  expenseSubCategories, 
-  incomeCategories,
-  incomeSubCategories,
-  investmentCategories,
-  bankAccounts, 
-  creditCards, 
-  onExpenseAdded,
-  onIncomeAdded,
-  onInvestmentAdded
+    expenseCategories, 
+    expenseSubCategories,
+    incomeCategories,
+    incomeSubCategories,
+    investmentCategories,
+    bankAccounts, 
+    creditCards,
+    onExpenseAdded,
+    onIncomeAdded,
+    onInvestmentAdded,
+    onOpenSplitwiseDialog
 }: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -55,6 +59,7 @@ export function DashboardHeader({
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
   const [isAddInvestmentOpen, setIsAddInvestmentOpen] = useState(false);
+  const [splitwiseGroups, setSplitwiseGroups] = useState<SplitwiseGroup[]>([]);
 
   useEffect(() => {
     async function fetchUser() {
@@ -68,7 +73,21 @@ export function DashboardHeader({
         console.error("Failed to fetch user", error);
       }
     }
+    async function fetchSplitwiseGroups() {
+        try {
+            const res = await fetch('/api/splitwise');
+            const data = await res.json();
+            if (res.ok) {
+                setSplitwiseGroups(data.groups || []);
+            } else {
+                console.error("Failed to fetch splitwise groups", data.error);
+            }
+        } catch(error) {
+            console.error("Failed to fetch splitwise groups", error);
+        }
+    }
     fetchUser();
+    fetchSplitwiseGroups();
   }, [toast]);
   
   const handleLogout = async () => {
@@ -121,7 +140,7 @@ export function DashboardHeader({
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                    <DropdownMenuItem>Splitwise</DropdownMenuItem>
+                    <DropdownMenuItem onClick={onOpenSplitwiseDialog}>Splitwise</DropdownMenuItem>
                     <DropdownMenuItem>Pay CC bill</DropdownMenuItem>
                     <DropdownMenuItem>Settle up</DropdownMenuItem>
                 </DropdownMenuContent>
