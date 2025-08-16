@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AddExpenseDialog } from './add-expense-dialog';
 import { AddIncomeDialog } from './add-income-dialog';
 import { AddInvestmentDialog } from './add-investment-dialog';
+import { PayCCBillDialog } from './pay-cc-bill-dialog';
 import type { Category, SubCategory, Account } from './add-expense-dialog';
 import type { SplitwiseGroup } from './add-expense-dialog';
 import type { InvestmentCategory } from './add-investment-dialog';
@@ -36,7 +37,7 @@ interface DashboardHeaderProps {
   onExpenseAdded: (newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
   onIncomeAdded: (newIncome: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
   onInvestmentAdded: (newInvestment: Transaction, fromAccountId: string) => void;
-  
+  onPaymentMade: (payment: Transaction, fromBankId: string, toCreditCardId: string, amount: number) => void;
   onOpenSplitwiseDialog: () => void;
 }
 
@@ -51,6 +52,7 @@ export function DashboardHeader({
     onExpenseAdded,
     onIncomeAdded,
     onInvestmentAdded,
+    onPaymentMade,
     onOpenSplitwiseDialog
 }: DashboardHeaderProps) {
   const router = useRouter();
@@ -59,6 +61,7 @@ export function DashboardHeader({
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
   const [isAddInvestmentOpen, setIsAddInvestmentOpen] = useState(false);
+  const [isPayCCBillOpen, setIsPayCCBillOpen] = useState(false);
   const [splitwiseGroups, setSplitwiseGroups] = useState<SplitwiseGroup[]>([]);
 
   useEffect(() => {
@@ -141,7 +144,7 @@ export function DashboardHeader({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={onOpenSplitwiseDialog}>Splitwise</DropdownMenuItem>
-                    <DropdownMenuItem>Pay CC bill</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setIsPayCCBillOpen(true)}>Pay CC bill</DropdownMenuItem>
                     <DropdownMenuItem>Settle up</DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
@@ -187,6 +190,22 @@ export function DashboardHeader({
         investmentCategories={investmentCategories}
         accounts={bankAccountsOnly}
         onInvestmentAdded={onInvestmentAdded}
+      />
+      <PayCCBillDialog
+        open={isPayCCBillOpen}
+        onOpenChange={setIsPayCCBillOpen}
+        creditCards={creditCards.map(card => ({
+          id: card.id,
+          name: card.name,
+          usedAmount: card.usedAmount || 0,
+          totalLimit: card.totalLimit || 0,
+        }))}
+        bankAccounts={bankAccounts.map(account => ({
+          id: account.id,
+          name: account.name,
+          balance: account.balance || 0,
+        }))}
+        onPaymentMade={onPaymentMade}
       />
     </>
   );

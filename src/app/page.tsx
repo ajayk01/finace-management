@@ -388,6 +388,24 @@ export default function DashboardPage() {
     setExcludedExpenseIds(new Set());
   };
 
+  const handlePaymentMade = useCallback((payment: Transaction, fromBankId: string, toCreditCardId: string, amount: number) => {
+    // Update bank account balance (decrease)
+    setApiBankAccounts(prev => prev.map(acc => 
+      acc.id === fromBankId ? { ...acc, balance: acc.balance - amount } : acc
+    ));
+    
+    // Update credit card used amount (decrease)
+    setApiCreditCards(prev => prev.map(card => 
+      card.id === toCreditCardId ? { ...card, usedAmount: card.usedAmount - amount } : card
+    ));
+
+    // Add the payment as an expense in the current month if it matches
+    const paymentDate = new Date(payment.date!);
+    if (paymentDate.getFullYear() === selectedExpenseYear && monthOptions[paymentDate.getMonth()].value === selectedExpenseMonth) {
+      setRawMonthlyExpenses(prev => [...prev, payment].sort((a,b) => new Date(b.date!).getTime() - new Date(a.date!).getTime()));
+    }
+  }, [selectedExpenseMonth, selectedExpenseYear]);
+
   // --- Data Fetching Effects ---
   useEffect(() => {
     fetchBankDetails();
@@ -686,16 +704,20 @@ export default function DashboardPage() {
         bankAccounts={apiBankAccounts.map(acc => ({
           id: acc.id,
           name: acc.name,
-          type: 'Bank' as const
+          type: 'Bank' as const,
+          balance: acc.balance
         }))}
         creditCards={apiCreditCards.map(card => ({
           id: card.id,
           name: card.name,
-          type: 'Credit Card' as const
+          type: 'Credit Card' as const,
+          usedAmount: card.usedAmount,
+          totalLimit: card.totalLimit
         }))}
         onExpenseAdded={handleExpenseAdded}
         onIncomeAdded={handleIncomeAdded}
         onInvestmentAdded={handleInvestmentAdded}
+        onPaymentMade={handlePaymentMade}
         onOpenSplitwiseDialog={handleOpenSplitwiseDialog}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">

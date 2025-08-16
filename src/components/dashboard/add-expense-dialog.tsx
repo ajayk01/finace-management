@@ -81,6 +81,9 @@ export interface Account {
   id: string;
   name: string;
   type: 'Bank' | 'Credit Card';
+  balance?: number; // For bank accounts
+  usedAmount?: number; // For credit cards
+  totalLimit?: number; // For credit cards
 }
 
 export interface SplitwiseUser {
