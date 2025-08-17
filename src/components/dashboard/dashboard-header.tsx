@@ -145,7 +145,6 @@ export function DashboardHeader({
                 <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={onOpenSplitwiseDialog}>Splitwise</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsPayCCBillOpen(true)}>Pay CC bill</DropdownMenuItem>
-                    <DropdownMenuItem>Settle up</DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
 

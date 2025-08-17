@@ -15,6 +15,7 @@ interface FriendBalance {
     name: string;
     splitwiseAmount: number | null;
     notionAmount: number | null;
+    pageId?: string;
 }
 
 // Helper to check if cache is valid
@@ -77,7 +78,7 @@ async function fetchNotionFriends() {
         return response.results.map((page: any) => {
             const name = page.properties?.Name?.title?.[0]?.plain_text || null;
             const balance = page.properties?.Total_Owns?.formula?.number ?? null;
-            return { name, balance };
+            return { name, balance, pageId: page.id };
         }).filter(friend => friend.name); // Only include friends with a name
     } catch (error) {
         console.error("Error fetching friends from Notion:", error);
@@ -127,7 +128,9 @@ export async function GET(request: Request) {
         notionFriends.forEach(friend => {
             if (friend.name) {
                 if (!mergedFriends[friend.name]) {
-                    mergedFriends[friend.name] = { name: friend.name, splitwiseAmount: null, notionAmount: null };
+                    mergedFriends[friend.name] = { name: friend.name, splitwiseAmount: null, notionAmount: null, pageId: friend.pageId };
+                } else {
+                    mergedFriends[friend.name].pageId = friend.pageId;
                 }
                 mergedFriends[friend.name].notionAmount = friend.balance;
             }

@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -15,16 +17,30 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, ArrowDown, ArrowUp, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "../ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
 
 export interface FriendBalance {
   name: string;
   splitwiseAmount: number | null;
   notionAmount: number | null;
+  pageId?: string;
+}
+
+interface BankAccount {
+  id: string;
+  name: string;
 }
 
 interface SplitwiseDialogProps {
@@ -34,6 +50,7 @@ interface SplitwiseDialogProps {
   isLoading: boolean;
   error: string | null;
   onRefresh?: () => void;
+  bankAccounts: BankAccount[];
 }
 
 const formatCurrency = (amount: number | null) => {
@@ -57,7 +74,95 @@ const getAmountColor = (splitwiseAmount: number | null, notionAmount: number | n
   return "text-foreground";
 };
 
-export function SplitwiseDialog({ open, onOpenChange, data, isLoading, error, onRefresh }: SplitwiseDialogProps) {
+export function SplitwiseDialog({
+  open,
+  onOpenChange,
+  data,
+  isLoading,
+  error,
+  onRefresh,
+  bankAccounts
+}: SplitwiseDialogProps) {
+  const [selectedBankAccount, setSelectedBankAccount] = useState<string>('');
+  const [settlingFriend, setSettlingFriend] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const handleSettleUp = async (friendName: string, friendPageId?: string) => {
+    if (!selectedBankAccount) {
+      toast({
+        title: 'Select Bank Account',
+        description: 'Please select a bank account first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSettlingFriend(friendName);
+    try {
+      // First fetch transactions for the friend - prefer pageId if available
+      const queryParam = friendPageId 
+        ? `friendPageId=${encodeURIComponent(friendPageId)}`
+        : `friendName=${encodeURIComponent(friendName)}`;
+      
+      const transactionsResponse = await fetch(`/api/friend-transactions?${queryParam}`);
+      if (!transactionsResponse.ok) {
+        throw new Error('Failed to fetch friend transactions');
+      }
+      const transactionsData = await transactionsResponse.json();
+      console.log("Fetched trans",transactionsData)
+      if (!transactionsData.transactions || transactionsData.transactions.length === 0) {
+        toast({
+          title: 'No Transactions Found',
+          description: `No transactions found for ${friendName}. Cannot settle up.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Create settlement with all transactions
+      const settlementResponse = await fetch('/api/settle-up', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          friendName: friendName,
+          bankAccountId: selectedBankAccount,
+          transactions: transactionsData.transactions.map((t: any) => ({
+            id: t.id,
+            amount: t.amount,
+            splitwiseId: t.splitwiseId
+          })),
+        }),
+      });
+
+      if (!settlementResponse.ok) {
+        throw new Error('Failed to create settlement');
+      }
+
+      const settlementData = await settlementResponse.json();
+      
+      toast({
+        title: 'Settlement Created',
+        description: settlementData.message,
+      });
+
+      // Refresh data
+      if (onRefresh) {
+        onRefresh();
+      }
+
+    } catch (error) {
+      console.error('Error creating settlement:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create settlement. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSettlingFriend(null);
+    }
+  };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg h-[70vh] flex flex-col">
@@ -83,6 +188,26 @@ export function SplitwiseDialog({ open, onOpenChange, data, isLoading, error, on
             )}
           </div>
         </DialogHeader>
+        
+        {/* Bank Account Selection */}
+        <div className="px-1 pb-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Select Bank Account for Settlements</label>
+            <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose bank account for settlements" />
+              </SelectTrigger>
+              <SelectContent>
+                {bankAccounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        
         <div className="flex-grow overflow-hidden">
           <ScrollArea className="h-full pr-4">
             {isLoading ? (
@@ -107,6 +232,7 @@ export function SplitwiseDialog({ open, onOpenChange, data, isLoading, error, on
                     <TableHead>Friend</TableHead>
                     <TableHead className="text-right">Splitwise</TableHead>
                     <TableHead className="text-right">Notion</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -128,6 +254,17 @@ export function SplitwiseDialog({ open, onOpenChange, data, isLoading, error, on
                             {friend.notionAmount !== null && friend.notionAmount < 0 && <ArrowDown className="h-3 w-3" />}
                             {formatCurrency(friend.notionAmount)}
                           </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSettleUp(friend.name, friend.pageId)}
+                            disabled={settlingFriend === friend.name}
+                            className="text-xs"
+                          >
+                            {settlingFriend === friend.name ? 'Settling...' : 'Settle Up'}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );

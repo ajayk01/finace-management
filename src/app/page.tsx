@@ -931,6 +931,10 @@ export default function DashboardPage() {
         isLoading={isFriendsBalanceLoading}
         error={friendsBalanceError}
         onRefresh={handleRefreshSplitwiseData}
+        bankAccounts={apiBankAccounts.map(account => ({
+          id: account.id,
+          name: account.name,
+        }))}
       />
     </div>
   );
