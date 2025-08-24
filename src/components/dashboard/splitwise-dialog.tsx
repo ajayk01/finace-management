@@ -261,13 +261,10 @@ export function SplitwiseDialog({
                         <TableCell className="text-right py-3">
                           <Button
                             size="sm"
-                            variant={isMatched ? "outline" : "default"}
+                            variant="default"
                             onClick={() => handleSettleUp(friend.name, friend.pageId)}
                             disabled={settlingFriend === friend.name}
-                            className={cn(
-                              "px-4 py-1 h-8",
-                              isMatched ? "hover:bg-slate-100" : "bg-blue-600 hover:bg-blue-700 text-white"
-                            )}
+                            className="px-4 py-1 h-8 bg-blue-600 hover:bg-blue-700 text-white"
                           >
                             {settlingFriend === friend.name ? 'Settling...' : 'Settle Up'}
                           </Button>
