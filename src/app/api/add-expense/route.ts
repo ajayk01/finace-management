@@ -4,7 +4,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
 import { z } from 'zod';
-import { error } from 'node:console';
 
 const notion = new Client({ auth: process.env.NOTION_API_WRITE });
 const EXPENSES_DB_ID = process.env.EXPENSE_DB_ID;
@@ -105,11 +104,17 @@ async function addSplitwiseExpense({ amount, description, groupId, userIds, spli
 
     const responseText = await response.text();
 
-    if (!response.ok) {
+    if (!response.ok) 
+    {
         throw new Error(`Splitwise API failed: ${response.status} - ${responseText}`);
     }
 
     const result = JSON.parse(responseText);
+    if(result.errors)
+    {
+        console.error('❌ Splitwise API error:', result.errors.base);
+        throw new Error(result.errors.base);
+    }
     return result;
 }
 
@@ -262,17 +267,7 @@ export async function POST(request: NextRequest)
         console.log('✅ Notion expense created successfully');
         let result;
         if (includeSplitwise && splitwiseGroupId && splitwiseUserIds && splitwiseUserIds.length > 0) {
-            try {
-                
-                    const notionProp = await createNotionExpense({amount: Number(amount), date, description, account, categoryId, subCategoryId});
 
-                    result = await notion.pages.create({
-                        parent: { database_id: EXPENSES_DB_ID },
-                        properties: notionProp,
-                    });
-                    resultForOthersId = result.id;
-                
-               
                 await addSplitwiseExpense({
                     amount,
                     description: parsedData.description, // Use original description for Splitwise
@@ -281,6 +276,15 @@ export async function POST(request: NextRequest)
                     splitType: splitType || 'equal',
                     customAmounts: customAmounts
                 });
+
+                const notionProp = await createNotionExpense({amount: Number(amount), date, description, account, categoryId, subCategoryId});
+
+                result = await notion.pages.create({
+                    parent: { database_id: EXPENSES_DB_ID },
+                    properties: notionProp,
+                });
+                resultForOthersId = result.id;
+                
                 
                 const splitwiseDbId = process.env.SPLITWISE_DB_ID;
                 if (!splitwiseDbId) 
@@ -324,11 +328,6 @@ export async function POST(request: NextRequest)
                         });
                     }
                 }));
-
-            } catch (splitwiseError) {
-                console.error('❌ Failed to add expense to Splitwise:', splitwiseError);
-                // Don't fail the entire request if Splitwise fails
-            }
         } else {
             // No Splitwise, just create regular Notion expense
             const notionProp = await createNotionExpense({amount, date, description, account, categoryId, subCategoryId});
@@ -345,11 +344,16 @@ export async function POST(request: NextRequest)
             userMapping: userMapping
         });
 
-    } catch (error) {
-        console.error('Error adding expense to Notion:', error);
-        if (error instanceof z.ZodError) {
-             return NextResponse.json({ error: 'Invalid data provided.', details: error.errors }, { status: 400 });
+    } 
+    catch (error) 
+    {
+        if (error instanceof Error) 
+        {
+            return NextResponse.json({ error: error.message }, { status: 500 });
+        } 
+        else 
+        {
+            return NextResponse.json({ error: String(error) }, { status: 500 });
         }
-        return NextResponse.json({ error: 'An internal server error occurred.' }, { status: 500 });
     }   
 }
