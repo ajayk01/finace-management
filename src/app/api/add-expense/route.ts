@@ -110,7 +110,7 @@ async function addSplitwiseExpense({ amount, description, groupId, userIds, spli
     }
 
     const result = JSON.parse(responseText);
-    if(result.errors)
+    if(result.errors && result.errors.base)
     {
         console.error('❌ Splitwise API error:', result.errors.base);
         throw new Error(result.errors.base);
@@ -250,11 +250,31 @@ export async function POST(request: NextRequest)
         const parsedData = addExpenseSchema.parse(body);
 
         let { amount, date, description, account, categoryId, subCategoryId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId, splitType, customAmounts } = parsedData;
+        let splitAmt: number = 0;
+        // If splitType is equal or undefined, populate customAmounts with equal shares
+        if (includeSplitwise && splitwiseUserIds && splitwiseUserIds.length > 0 && 
+            (!splitType || splitType === 'equal')) 
+        {
+            // Calculate equal share for each user
+            const perUserAmount = Math.ceil(amount / splitwiseUserIds.length);
+            splitAmt = perUserAmount * splitwiseUserIds.length;
+            console.log("perUserAmount :",perUserAmount)
+            // Create customAmounts object if it doesn't exist
+            customAmounts = customAmounts || {};
+            
+            // Populate with equal shares for all users
+            for (const userId of splitwiseUserIds) 
+            {
+                customAmounts[userId] = perUserAmount;
+            }
+            
+            console.log('Created equal shares customAmounts:', customAmounts);
+        }
 
-        // Validate custom amounts if split type is custom
-        if (includeSplitwise && splitType === 'custom' && customAmounts && splitwiseUserIds) {
+        // Validate custom amounts if customAmounts exists (either from input or just created)
+        if (includeSplitwise && customAmounts && splitwiseUserIds) {
             const totalCustomAmount = Object.values(customAmounts).reduce((sum, amt) => sum + amt, 0);
-            if (Math.abs(totalCustomAmount - amount) > 0.01) {
+            if (Math.abs(totalCustomAmount - splitAmt) > 0.01) {
                 return NextResponse.json({ error: 'Custom amounts must total the expense amount.' }, { status: 400 });
             }
         }
@@ -269,11 +289,11 @@ export async function POST(request: NextRequest)
         if (includeSplitwise && splitwiseGroupId && splitwiseUserIds && splitwiseUserIds.length > 0) {
 
                 await addSplitwiseExpense({
-                    amount,
+                    amount: splitAmt,
                     description: parsedData.description, // Use original description for Splitwise
                     groupId: splitwiseGroupId,
                     userIds: splitwiseUserIds,
-                    splitType: splitType || 'equal',
+                    splitType: 'custom',
                     customAmounts: customAmounts
                 });
 
@@ -305,17 +325,17 @@ export async function POST(request: NextRequest)
                             throw new Error("UserId not found");
                         }
                         
-                        // Calculate split amount based on split type
                         let splitAmount: number;
-                        if (splitType === 'custom' && customAmounts) {
-                            splitAmount = customAmounts[userId] || 0;
+                        if (customAmounts) {
+                            // Use the pre-calculated amount from customAmounts
+                            splitAmount = customAmounts[userId];
                         } else {
-                            // Default to equal split
-                            splitAmount = amount / splitwiseUserIds.length;
+                            throw new Error("Custom amounts not found");
                         }
                         
                         const notionSplitProp = await fetchNotionSplitwiseProp({
-                            amount: Number(splitAmount.toFixed(2)), 
+
+                            amount: splitAmount, 
                             description, 
                             notionFriendId: notionUserId, 
                             expenseId: resultForOthersId
