@@ -165,12 +165,12 @@ export function SplitwiseDialog({
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg h-[70vh] flex flex-col">
+      <DialogContent className="sm:max-w-4xl md:max-w-5xl h-[80vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div>
-              <DialogTitle>Splitwise Balance Summary</DialogTitle>
-              <DialogDescription>
+              <DialogTitle className="text-xl font-bold">Splitwise Balance Summary</DialogTitle>
+              <DialogDescription className="text-sm mt-2">
                 Comparison of balances from Splitwise and Notion.
               </DialogDescription>
             </div>
@@ -190,11 +190,14 @@ export function SplitwiseDialog({
         </DialogHeader>
         
         {/* Bank Account Selection */}
-        <div className="px-1 pb-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Select Bank Account for Settlements</label>
+        <div className="px-1 pb-6 pt-2">
+          <div className="space-y-2 max-w-md">
+            <label className="text-sm font-medium flex items-center">
+              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded mr-2 text-xs font-bold">REQUIRED</span>
+              Select Bank Account for Settlements
+            </label>
             <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
-              <SelectTrigger>
+              <SelectTrigger className="border-2 h-10">
                 <SelectValue placeholder="Choose bank account for settlements" />
               </SelectTrigger>
               <SelectContent>
@@ -209,7 +212,7 @@ export function SplitwiseDialog({
         </div>
         
         <div className="flex-grow overflow-hidden">
-          <ScrollArea className="h-full pr-4">
+          <ScrollArea className="h-full pr-4 pb-4">
             {isLoading ? (
               <div className="space-y-2">
                 {[...Array(8)].map((_, i) => (
@@ -226,42 +229,45 @@ export function SplitwiseDialog({
                 Error: {error}
               </div>
             ) : data.length > 0 ? (
-              <Table>
+              <Table className="border">
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Friend</TableHead>
-                    <TableHead className="text-right">Splitwise</TableHead>
-                    <TableHead className="text-right">Notion</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                  <TableRow className="bg-slate-50">
+                    <TableHead className="font-bold text-base w-1/3">Friend</TableHead>
+                    <TableHead className="text-right font-bold text-base">Splitwise</TableHead>
+                    <TableHead className="text-right font-bold text-base">Notion</TableHead>
+                    <TableHead className="text-right font-bold text-base w-1/6">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.map((friend) => {
                     const isMatched = friend.splitwiseAmount === friend.notionAmount;
                     return (
-                      <TableRow key={friend.name} className={cn(!isMatched && "bg-red-50 hover:bg-red-100")}>
-                        <TableCell className="font-medium">{friend.name}</TableCell>
-                        <TableCell className={cn("text-right font-semibold", getAmountColor(friend.splitwiseAmount, friend.notionAmount))}>
+                      <TableRow key={friend.name} className={cn("py-3 transition-colors", !isMatched ? "bg-red-50 hover:bg-red-100" : "hover:bg-slate-50")}>
+                        <TableCell className="font-medium text-base py-3">{friend.name}</TableCell>
+                        <TableCell className={cn("text-right font-semibold py-3", getAmountColor(friend.splitwiseAmount, friend.notionAmount))}>
                           <div className="flex items-center justify-end gap-1">
-                            {friend.splitwiseAmount !== null && friend.splitwiseAmount > 0 && <ArrowUp className="h-3 w-3" />}
-                            {friend.splitwiseAmount !== null && friend.splitwiseAmount < 0 && <ArrowDown className="h-3 w-3" />}
-                            {formatCurrency(friend.splitwiseAmount)}
+                            {friend.splitwiseAmount !== null && friend.splitwiseAmount > 0 && <ArrowUp className="h-4 w-4 text-green-600" />}
+                            {friend.splitwiseAmount !== null && friend.splitwiseAmount < 0 && <ArrowDown className="h-4 w-4 text-red-600" />}
+                            <span className="text-base">{formatCurrency(friend.splitwiseAmount)}</span>
                           </div>
                         </TableCell>
-                        <TableCell className={cn("text-right font-semibold", getAmountColor(friend.splitwiseAmount, friend.notionAmount))}>
+                        <TableCell className={cn("text-right font-semibold py-3", getAmountColor(friend.splitwiseAmount, friend.notionAmount))}>
                           <div className="flex items-center justify-end gap-1">
-                            {friend.notionAmount !== null && friend.notionAmount > 0 && <ArrowUp className="h-3 w-3" />}
-                            {friend.notionAmount !== null && friend.notionAmount < 0 && <ArrowDown className="h-3 w-3" />}
-                            {formatCurrency(friend.notionAmount)}
+                            {friend.notionAmount !== null && friend.notionAmount > 0 && <ArrowUp className="h-4 w-4 text-green-600" />}
+                            {friend.notionAmount !== null && friend.notionAmount < 0 && <ArrowDown className="h-4 w-4 text-red-600" />}
+                            <span className="text-base">{formatCurrency(friend.notionAmount)}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right py-3">
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant={isMatched ? "outline" : "default"}
                             onClick={() => handleSettleUp(friend.name, friend.pageId)}
                             disabled={settlingFriend === friend.name}
-                            className="text-xs"
+                            className={cn(
+                              "px-4 py-1 h-8",
+                              isMatched ? "hover:bg-slate-100" : "bg-blue-600 hover:bg-blue-700 text-white"
+                            )}
                           >
                             {settlingFriend === friend.name ? 'Settling...' : 'Settle Up'}
                           </Button>

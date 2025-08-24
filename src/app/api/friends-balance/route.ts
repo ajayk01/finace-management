@@ -77,7 +77,7 @@ async function fetchNotionFriends() {
         });
         return response.results.map((page: any) => {
             const name = page.properties?.Name?.title?.[0]?.plain_text || null;
-            const balance = page.properties?.Total_Owns?.formula?.number ?? null;
+            const balance = page.properties?.["Total Owns"]?.formula?.number ?? null;
             return { name, balance, pageId: page.id };
         }).filter(friend => friend.name); // Only include friends with a name
     } catch (error) {
