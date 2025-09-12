@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { Client } from '@notionhq/client';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
@@ -61,10 +62,8 @@ function formatDateToDDMMYYYY(date: Date): string {
 async function loadCategoryCache() 
 {
   if (!INC_CATEGORY_DB_ID || categoryCache.size > 0) return;
-  const response = await notion.databases.query({
-    database_id: INC_CATEGORY_DB_ID,
-  });
-  response.results.forEach((page: any) => 
+  const results = await fetchAllPagesFromNotion(notion, INC_CATEGORY_DB_ID);
+  results.forEach((page: any) => 
   {
     const id = page.id;
     const name = page.properties["Category"]?.title?.[0]?.plain_text;
@@ -75,10 +74,8 @@ async function loadCategoryCache()
 async function loadSubCategoryCache() 
 {
   if (!INC_SUB_CATEGORY_DB_ID || subCategoryCache.size > 0) return;
-  const response = await notion.databases.query({
-    database_id: INC_SUB_CATEGORY_DB_ID,
-  });
-  response.results.forEach((page: any) => 
+  const results = await fetchAllPagesFromNotion(notion, INC_SUB_CATEGORY_DB_ID);
+  results.forEach((page: any) => 
   {
     const id = page.id;
     const name = page.properties["Sub Category"]?.title?.[0]?.plain_text;
@@ -119,13 +116,10 @@ async function fetchMonthlyIncomeFromNotion({
 
     await Promise.all([loadCategoryCache(), loadSubCategoryCache()]);
 
-    const response = await notion.databases.query({
-      database_id: INCOME_DB_ID,
-      filter: filters
-    });
+    const results = await fetchAllPagesFromNotion(notion, INCOME_DB_ID, { filter: filters });
 
     const items = await Promise.all(
-      response.results.map(async (page:any) => {
+      results.map(async (page:any) => {
         const prop = page.properties;
         const amount = Number(prop["Amount"]?.number);
         if (amount === 0) return null;

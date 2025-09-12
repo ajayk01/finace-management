@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { Client } from '@notionhq/client';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
@@ -13,11 +14,9 @@ async function fetchCreditCardsFromNotion()
     throw new Error("NOTION_CREDIT_CARDS_DB_ID is not set in environment variables.");
   }
   try {
-    const response = await notion.databases.query({
-      database_id: NOTION_CREDIT_CARDS_DB_ID,
-    });
+    const results = await fetchAllPagesFromNotion(notion, NOTION_CREDIT_CARDS_DB_ID);
 
-    return response.results.map((page) => 
+    return results.map((page) => 
     {
       const cardNameProperty = (page as any).properties?.['Name']["title"][0]["plain_text"]; 
       const usedAmountProperty = (page as any).properties?.['Total Used']["formula"]; 

@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { Client } from '@notionhq/client';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
@@ -28,8 +29,7 @@ async function fetchYearlySummaryFromNotion(year: number) {
     }));
 
     try {
-        const response = await notion.databases.query({
-            database_id: NOTION_YEARLY_SUMMARY_DB_ID,
+        const results = await fetchAllPagesFromNotion(notion, NOTION_YEARLY_SUMMARY_DB_ID, {
             filter: {
                 // Assuming 'Month - Year' is a Title property, e.g. "2024-05"
                 property: 'Month - Year',
@@ -46,7 +46,7 @@ async function fetchYearlySummaryFromNotion(year: number) {
         });
 
         // Map response to our summaryData structure
-        response.results.forEach((page: any) => {
+        results.forEach((page: any) => {
             const properties = page.properties;
             const monthYearStr = properties['Month - Year']?.title?.[0]?.plain_text; // e.g., "2025-06"
             if (!monthYearStr || !monthYearStr.includes('-')) return;

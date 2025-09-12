@@ -4,28 +4,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
 import xirr from 'xirr';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const INVESTMENT_TRANS_DB_ID = process.env.INVESTMENT_TRANS_DB_ID;
 const INVESTMENT_ACCOUNTS_DB_ID = process.env.INVESTMENT_DB_ID;
-
-// Helper to fetch all pages from a paginated Notion API endpoint
-async function getAllPages(query: any) {
-    let results: any[] = [];
-    let hasMore = true;
-    let startCursor: string | undefined = undefined;
-
-    while (hasMore) {
-        const response: any = await notion.databases.query({
-            ...query,
-            start_cursor: startCursor,
-        });
-        results = results.concat(response.results);
-        hasMore = response.has_more;
-        startCursor = response.next_cursor;
-    }
-    return results;
-}
 
 export async function POST(request: NextRequest) {
     if (!INVESTMENT_TRANS_DB_ID || !INVESTMENT_ACCOUNTS_DB_ID) {
@@ -43,7 +26,7 @@ export async function POST(request: NextRequest) {
         }
 
         // 1. Fetch all transactions for the given account
-        const transactionPages = await getAllPages({
+        const transactionPages = await fetchAllPagesFromNotion(notion, INVESTMENT_TRANS_DB_ID, {
             database_id: INVESTMENT_TRANS_DB_ID,
             filter: {
                 property: 'Invested Account',

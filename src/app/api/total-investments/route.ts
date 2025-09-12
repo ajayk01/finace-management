@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { Client } from '@notionhq/client';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
@@ -32,10 +33,8 @@ interface ExpenseItem {
 
 async function loadInvestmentAccountCache() {
   if (!INVESTMENT_ACCOUNTS_DB_ID || investmentAccountCache.size > 0) return;
-  const response = await notion.databases.query({
-    database_id: INVESTMENT_ACCOUNTS_DB_ID,
-  });
-  response.results.forEach((page: any) => {
+  const results = await fetchAllPagesFromNotion(notion, INVESTMENT_ACCOUNTS_DB_ID);
+  results.forEach((page: any) => {
     const id = page.id;
     const name = page.properties["Investment Account"]?.title?.[0]?.plain_text;
     if (id && name) investmentAccountCache.set(id, name);
@@ -52,12 +51,10 @@ async function fetchTotalInvestmentsFromNotion({}): Promise<Transaction[]>
   try {
     await loadInvestmentAccountCache();
 
-    const response = await notion.databases.query({
-      database_id: INVESTMENT_ACCOUNTS_DB_ID,
-    });
+    const results = await fetchAllPagesFromNotion(notion, INVESTMENT_ACCOUNTS_DB_ID);
 
     const items = await Promise.all(
-      response.results.map(async (page: any) => {
+      results.map(async (page: any) => {
         
         const prop = (page as any).properties;
         const amount = Number(prop["Total invested "]["formula"]["number"]) || 0;

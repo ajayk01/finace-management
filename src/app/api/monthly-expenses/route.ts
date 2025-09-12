@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { Client } from '@notionhq/client';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
@@ -58,10 +59,8 @@ function formatDateToDDMMYYYY(date: Date): string {
 async function loadCategoryCache() 
 {
   if (!EXPENSE_CATEGORY_DB_ID) return;
-  const response = await notion.databases.query({
-    database_id: EXPENSE_CATEGORY_DB_ID,
-  });
-    response.results.forEach((page: any) => 
+  const results = await fetchAllPagesFromNotion(notion, EXPENSE_CATEGORY_DB_ID);
+  results.forEach((page: any) => 
     {
     const id = page.id;
     const name = page.properties["Category"]?.title?.[0]?.plain_text;
@@ -72,10 +71,8 @@ async function loadCategoryCache()
 async function loadSubCategoryCache() 
 {
   if (!EXP_SUB_CATEGORY_DB_ID) return;
-  const response = await notion.databases.query({
-    database_id: EXP_SUB_CATEGORY_DB_ID,
-  });
-    response.results.forEach((page: any) => 
+  const results = await fetchAllPagesFromNotion(notion, EXP_SUB_CATEGORY_DB_ID);
+  results.forEach((page: any) => 
     {
       const id = page.id;
       const categoryId = page.properties["Category Name"]["relation"][0]["id"];
@@ -129,15 +126,13 @@ async function fetchMonthlyExpensesFromNotion({
         await loadSubCategoryCache();
       }
     
-    const response = await notion.databases.query({
-      database_id: EXPENSES_DB_ID,
-      ...(filters.and && { filter: filters })
-    });
+    const results = await fetchAllPagesFromNotion(notion, EXPENSES_DB_ID, { filter: filters });
+          console.log("Total pages fetched:", results.length);
 
     const items = await Promise.all(
-      response.results.map(async (page) => {
-        
-        
+      results.map(async (page: any) => {
+
+
         const prop = (page as any).properties;
 
         const amount = Number(prop["Amount"]["number"])
@@ -159,8 +154,9 @@ async function fetchMonthlyExpensesFromNotion({
         if(subCategoryId != undefined)
         {
           subCategoryName = subCategoryCache.get(subCategoryId) ?? "";
-         
+        
         }
+        // console.log("Date : ", date, " Desc : ", description, " Amount : ", amount, " Category : ", categoryName, " Sub Category : ", subCategoryName);
         if(categoryName == "" && subCategoryName == "")
         {
           return null;

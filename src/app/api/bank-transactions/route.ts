@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { Client } from '@notionhq/client';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
@@ -74,15 +75,14 @@ async function fetchFromDatabase(
             });
         }
         
-        const response = await notion.databases.query({
-            database_id: databaseId,
+        const results = await fetchAllPagesFromNotion(notion, databaseId, {
             filter: {
                 and: filterConditions,
             },
         });
 
         // Use a type guard to filter out any malformed pages before mapping
-        return response.results.map((page: any): Transaction => {
+        return results.map((page: any): Transaction => {
             const properties = page.properties;
             // Title properties can have different names, e.g., 'Expense' or 'Name'
             const descriptionProp = properties[propertyNames.description]['title'][0]['plain_text'];

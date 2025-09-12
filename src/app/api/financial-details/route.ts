@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { Client } from '@notionhq/client';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
@@ -74,13 +75,12 @@ async function fetchGroupedMonthlyExpensesFromNotion({
       }
     }
 
-    const response = await notion.databases.query({
-      database_id: EXPENSES_DB_ID,
+    const results = await fetchAllPagesFromNotion(notion, EXPENSES_DB_ID, {
       ...(filters.and && { filter: filters })
     });
 
     const items = await Promise.all(
-      response.results.map(async (page) => {
+      results.map(async (page) => {
         
         
         const prop = (page as any).properties;
@@ -158,12 +158,9 @@ async function fetchMonthlyIncomesFromNotion(): Promise<ExpenseItem[]> {
     throw new Error("EXP_SUB_CATEGORY_DB_ID is not set in environment variables.");
   }
   try {
-    const response = await notion.databases.query({
-      database_id: INC_SUB_CATEGORY_DB_ID,
-      // Add sorts here if needed, e.g., by Year then Month
-    });
+    const results = await fetchAllPagesFromNotion(notion, INC_SUB_CATEGORY_DB_ID);
 
-      const items = await Promise.all(response.results.map(async (page) => {
+      const items = await Promise.all(results.map(async (page) => {
       const prop = (page as any).properties;
       const expense = prop["Total Incomes"]["formula"]["number"];
       if(expense == 0)
@@ -200,12 +197,9 @@ async function fetchMonthlyInvFromNotion(): Promise<ExpenseItem[]> {
     throw new Error("EXP_SUB_CATEGORY_DB_ID is not set in environment variables.");
   }
   try {
-    const response = await notion.databases.query({
-      database_id: INVESTMENT_DB_ID,
-      // Add sorts here if needed, e.g., by Year then Month
-    });
+    const results = await fetchAllPagesFromNotion(notion, INVESTMENT_DB_ID);
 
-      const items = await Promise.all(response.results.map(async (page) => {
+      const items = await Promise.all(results.map(async (page) => {
       const prop = (page as any).properties;
       const expense = prop["This Month Investments"]["formula"]["number"];
       if(expense == 0)

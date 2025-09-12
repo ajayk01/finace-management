@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
 import { z } from 'zod';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 const notion = new Client({ auth: process.env.NOTION_API_WRITE });
 const EXPENSES_DB_ID = process.env.EXPENSE_DB_ID;
@@ -148,11 +149,8 @@ async function createSplitwiseToNotionMapping(): Promise<Map<string, string>>
     try {
        
         
-        const response = await notion.databases.query({
-            database_id: SPLITWISE_USERS_DB_ID,
-        });
-
-        response.results.forEach((page: any) => 
+        const results = await fetchAllPagesFromNotion(notion, SPLITWISE_USERS_DB_ID);
+        results.forEach((page: any) => 
         {
             const notionId = page["id"]
             const nameProperty = page["properties"]["Name"]["title"][0]["plain_text"]

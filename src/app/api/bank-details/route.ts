@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { Client } from '@notionhq/client';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 // Initialize Notion client
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
@@ -13,10 +14,8 @@ async function fetchBankAccountsFromNotion()
     throw new Error("NOTION_BANK_ACCOUNTS_DB_ID is not set in environment variables.");
   }
   try {
-    const response = await notion.databases.query({
-      database_id: NOTION_BANK_ACCOUNTS_DB_ID,
-    });
-    return response.results.map((page) => {
+    const results = await fetchAllPagesFromNotion(notion, NOTION_BANK_ACCOUNTS_DB_ID);
+    return results.map((page) => {
       // Adjust these property names if your Notion database uses different names
       const accountNameProperty = (page as any).properties?.['Account']["title"][0]["plain_text"] // Assumes 'Account Name' is a Title property
       const balanceProperty = (page as any).properties?.['Current Balance']["formula"] // Assumes 'Balance' is a Number property

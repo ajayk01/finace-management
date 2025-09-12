@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const  SPLITWISE_DB_ID= process.env.SPLITWISE_DB_ID;
@@ -33,12 +34,9 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    const response = await notion.databases.query({
-      database_id: SPLITWISE_DB_ID,
-      filter,
-    });
+    const results = await fetchAllPagesFromNotion(notion, SPLITWISE_DB_ID, { filter });
 
-    const transactions = response.results.map((page: any) => {
+    const transactions = results.map((page: any) => {
       const properties = page.properties;
       return {
         id: properties["Expense Link"]["relation"][0]["id"],

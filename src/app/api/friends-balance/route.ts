@@ -3,6 +3,7 @@
 
 import { NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
+import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
 
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const NOTION_FRIENDS_DB_ID = process.env.SPLITWISE_USERS_DB_ID;
@@ -72,10 +73,8 @@ async function fetchNotionFriends() {
         return [];
     }
     try {
-        const response = await notion.databases.query({
-            database_id: NOTION_FRIENDS_DB_ID,
-        });
-        return response.results.map((page: any) => {
+        const results = await fetchAllPagesFromNotion(notion, NOTION_FRIENDS_DB_ID);
+        return results.map((page: any) => {
             const name = page.properties?.Name?.title?.[0]?.plain_text || null;
             const balance = page.properties?.["Total Owns"]?.formula?.number ?? null;
             return { name, balance, pageId: page.id };
@@ -112,24 +111,28 @@ export async function GET(request: Request) {
         const splitwiseFriends = splitwiseData.friends || [];
         
         const mergedFriends: Record<string, FriendBalance> = {};
-
         // Process Splitwise friends
         splitwiseFriends.forEach((friend: any) => {
             const name = `${friend.first_name} ${friend.last_name || ''}`.trim();
             if (name && friend.balance?.[0]?.amount) {
-                 if (!mergedFriends[name]) {
+                if (!mergedFriends[name]) 
+                {
                     mergedFriends[name] = { name, splitwiseAmount: null, notionAmount: null };
-                }
+                }  
+
                 mergedFriends[name].splitwiseAmount = parseFloat(friend.balance[0].amount);
             }
         });
-
         // Process and merge Notion friends
-        notionFriends.forEach(friend => {
+        notionFriends.forEach(friend => 
+        {
             if (friend.name) {
-                if (!mergedFriends[friend.name]) {
+                if (!mergedFriends[friend.name]) 
+                {
                     mergedFriends[friend.name] = { name: friend.name, splitwiseAmount: null, notionAmount: null, pageId: friend.pageId };
-                } else {
+                } 
+                else 
+                {
                     mergedFriends[friend.name].pageId = friend.pageId;
                 }
                 mergedFriends[friend.name].notionAmount = friend.balance;
@@ -140,6 +143,7 @@ export async function GET(request: Request) {
           .filter(f => f.splitwiseAmount !== null && f.notionAmount !== null) // Only show friends with entries in both systems
           .sort((a, b) => a.name.localeCompare(b.name));
 
+        console.log("Friends:", friends);
         return NextResponse.json({ friends });
 
     } catch (error) {
