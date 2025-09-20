@@ -250,8 +250,7 @@ export async function POST(request: NextRequest)
         let { amount, date, description, account, categoryId, subCategoryId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId, splitType, customAmounts } = parsedData;
         let splitAmt: number = 0;
         // If splitType is equal or undefined, populate customAmounts with equal shares
-        if (includeSplitwise && splitwiseUserIds && splitwiseUserIds.length > 0 && 
-            (!splitType || splitType === 'equal')) 
+        if (includeSplitwise && splitwiseUserIds && splitwiseUserIds.length > 0)
         {
             // Calculate equal share for each user
             const perUserAmount = Math.ceil(amount / splitwiseUserIds.length);
@@ -272,8 +271,9 @@ export async function POST(request: NextRequest)
         // Validate custom amounts if customAmounts exists (either from input or just created)
         if (includeSplitwise && customAmounts && splitwiseUserIds) {
             const totalCustomAmount = Object.values(customAmounts).reduce((sum, amt) => sum + amt, 0);
-            if (Math.abs(totalCustomAmount - splitAmt) > 0.01) {
-                return NextResponse.json({ error: 'Custom amounts must total the expense amount.' }, { status: 400 });
+            if (Math.abs(totalCustomAmount - splitAmt) > 0.01) 
+            {
+                return NextResponse.json({ error: 'Custom amounts must total the expense amountt.' }, { status: 400 });
             }
         }
 
