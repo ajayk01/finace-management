@@ -114,19 +114,27 @@ export async function GET(request: Request) {
         // Process Splitwise friends
         splitwiseFriends.forEach((friend: any) => {
             const name = `${friend.first_name} ${friend.last_name || ''}`.trim();
-            if (name && friend.balance?.[0]?.amount) {
+            console.log("Processing Splitwise Friend: ", friend);
+            if (name && friend.balance?.[0]?.amount) 
+            {
                 if (!mergedFriends[name]) 
                 {
                     mergedFriends[name] = { name, splitwiseAmount: null, notionAmount: null };
                 }  
-
                 mergedFriends[name].splitwiseAmount = parseFloat(friend.balance[0].amount);
-            }
+                console.log("Splitwise Friend: ", name, " Amount: ", mergedFriends[name].splitwiseAmount);
+                //'console.log("in loop :",mergedFriends);
+            }   
         });
+        console.log("Splitwise Friends Processed: ", mergedFriends);
+        //console.log("splitwiseData ",splitwiseData, " notionFriends ", notionFriends);
         // Process and merge Notion friends
         notionFriends.forEach(friend => 
         {
+            // console.log("Notion Friend: ", friend);
+            // console.log("Notion Friend name: ", friend.name);
             if (friend.name) {
+                //console.log("mergedFriend[]:",mergedFriends[friend.name]);
                 if (!mergedFriends[friend.name]) 
                 {
                     mergedFriends[friend.name] = { name: friend.name, splitwiseAmount: null, notionAmount: null, pageId: friend.pageId };
@@ -138,9 +146,9 @@ export async function GET(request: Request) {
                 mergedFriends[friend.name].notionAmount = friend.balance;
             }
         });
-
+        console.log("Merged Friends: ", mergedFriends);
         const friends = Object.values(mergedFriends)
-          .filter(f => f.splitwiseAmount !== null && f.notionAmount !== null) // Only show friends with entries in both systems
+          //.filter(f => f.splitwiseAmount !== null && f.notionAmount !== null) // Only show friends with entries in both systems
           .sort((a, b) => a.name.localeCompare(b.name));
 
         console.log("Friends:", friends);
