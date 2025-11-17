@@ -34,6 +34,7 @@ interface Friend {
   name: string;
   splitwiseAmount: number;
   notionAmount: number;
+  friendId?: number; // Database ID for the friend
 }
 
 interface BankAccount {
@@ -49,6 +50,7 @@ interface Transaction {
   category: string;
   subCategory: string;
   accountId: string;
+  splitwiseId?: string; // Splitwise transaction ID
 }
 
 interface SettleUpDialogProps {
@@ -59,34 +61,31 @@ interface SettleUpDialogProps {
 }
 
 export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: SettleUpDialogProps) {
-  const [selectedFriend, setSelectedFriend] = useState<string>('');
+  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>('');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingTransactions, setIsFetchingTransactions] = useState(false);
   const { toast } = useToast();
 
   // Fetch transactions when friend is selected
   useEffect(() => {
-    if (selectedFriend) {
-      fetchFriendTransactions(selectedFriend);
+    if (selectedFriend?.friendId) {
+      fetchFriendTransactions(selectedFriend.friendId, selectedFriend.name);
     } else {
       setTransactions([]);
-      setSelectedTransactions(new Set());
     }
   }, [selectedFriend]);
 
-  const fetchFriendTransactions = async (friendName: string) => {
+  const fetchFriendTransactions = async (friendId: number, friendName: string) => {
     setIsFetchingTransactions(true);
     try {
-      const response = await fetch(`/api/friend-transactions?friendName=${encodeURIComponent(friendName)}`);
+      const response = await fetch(`/api/friend-transactions?friendId=${friendId}&friendName=${encodeURIComponent(friendName)}`);
       if (!response.ok) {
         throw new Error('Failed to fetch transactions');
       }
       const data = await response.json();
       setTransactions(data.transactions || []);
-      setSelectedTransactions(new Set()); // Reset selection
     } catch (error) {
       console.error('Error fetching transactions:', error);
       toast({
@@ -96,24 +95,6 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
       });
     } finally {
       setIsFetchingTransactions(false);
-    }
-  };
-
-  const handleTransactionSelection = (transactionId: string, checked: boolean) => {
-    const newSelection = new Set(selectedTransactions);
-    if (checked) {
-      newSelection.add(transactionId);
-    } else {
-      newSelection.delete(transactionId);
-    }
-    setSelectedTransactions(newSelection);
-  };
-
-  const handleSelectAll = () => {
-    if (selectedTransactions.size === transactions.length) {
-      setSelectedTransactions(new Set());
-    } else {
-      setSelectedTransactions(new Set(transactions.map(t => t.id)));
     }
   };
 
@@ -127,15 +108,6 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
       return;
     }
 
-    if (selectedTransactions.size === 0) {
-      toast({
-        title: 'No Transactions Selected',
-        description: 'Please select at least one transaction to settle.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setIsLoading(true);
     try {
       const response = await fetch('/api/settle-up', {
@@ -144,9 +116,8 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          friendName: selectedFriend,
+          friendId: selectedFriend.friendId,
           bankAccountId: selectedBankAccount,
-          transactionIds: Array.from(selectedTransactions),
         }),
       });
 
@@ -162,10 +133,9 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
       });
 
       // Reset form
-      setSelectedFriend('');
+      setSelectedFriend(null);
       setSelectedBankAccount('');
       setTransactions([]);
-      setSelectedTransactions(new Set());
       onOpenChange(false);
 
     } catch (error) {
@@ -179,10 +149,6 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
       setIsLoading(false);
     }
   };
-
-  const selectedAmount = transactions
-    .filter(t => selectedTransactions.has(t.id))
-    .reduce((sum, t) => sum + t.amount, 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -208,9 +174,9 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
                   <Card 
                     key={friend.name}
                     className={`cursor-pointer transition-colors ${
-                      selectedFriend === friend.name ? 'ring-2 ring-primary' : ''
+                      selectedFriend?.name === friend.name ? 'ring-2 ring-primary' : ''
                     }`}
-                    onClick={() => setSelectedFriend(friend.name)}
+                    onClick={() => setSelectedFriend(friend)}
                   >
                     <CardContent className="p-4">
                       <div className="flex justify-between items-center">
@@ -256,21 +222,12 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold">
-                  Transactions for {selectedFriend}
+                  Unsettled Transactions for {selectedFriend?.name}
                   {isFetchingTransactions && <span className="text-sm text-gray-500 ml-2">(Loading...)</span>}
                 </h3>
                 {transactions.length > 0 && (
-                  <div className="flex gap-2 items-center">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleSelectAll}
-                    >
-                      {selectedTransactions.size === transactions.length ? 'Deselect All' : 'Select All'}
-                    </Button>
-                    <span className="text-sm text-gray-600">
-                      Selected: ₹{selectedAmount.toFixed(2)}
-                    </span>
+                  <div className="text-sm text-gray-600">
+                    Total: ₹{transactions.reduce((sum, t) => sum + t.amount, 0).toFixed(2)}
                   </div>
                 )}
               </div>
@@ -280,7 +237,6 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-12">Select</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Description</TableHead>
                         <TableHead>Category</TableHead>
@@ -291,14 +247,6 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
                     <TableBody>
                       {transactions.map((transaction) => (
                         <TableRow key={transaction.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedTransactions.has(transaction.id)}
-                              onCheckedChange={(checked) => 
-                                handleTransactionSelection(transaction.id, checked as boolean)
-                              }
-                            />
-                          </TableCell>
                           <TableCell>{new Date(transaction.date).toLocaleDateString()}</TableCell>
                           <TableCell>{transaction.description}</TableCell>
                           <TableCell>{transaction.category}</TableCell>
@@ -311,7 +259,7 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
                 </div>
               ) : !isFetchingTransactions ? (
                 <div className="text-center py-8 text-gray-500">
-                  No transactions found for {selectedFriend}
+                  No unsettled transactions found for {selectedFriend?.name}
                 </div>
               ) : null}
             </div>
@@ -321,9 +269,9 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts }: Se
         <DialogFooter>
           <Button
             onClick={handleSettle}
-            disabled={!selectedFriend || !selectedBankAccount || selectedTransactions.size === 0 || isLoading}
+            disabled={!selectedFriend || !selectedBankAccount || transactions.length === 0 || isLoading}
           >
-            {isLoading ? 'Creating Settlement...' : `Settle ₹${selectedAmount.toFixed(2)}`}
+            {isLoading ? 'Creating Settlement...' : `Settle All (₹${transactions.reduce((sum, t) => sum + t.amount, 0).toFixed(2)})`}
           </Button>
         </DialogFooter>
       </DialogContent>

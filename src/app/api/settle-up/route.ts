@@ -1,80 +1,110 @@
 'use server';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Client } from '@notionhq/client';
-
-const notion = new Client({ auth: process.env.NOTION_API_WRITE });
-const EXPENSES_DB_ID = process.env.EXPENSE_DB_ID;
+import { query, TransactionType } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
-    const { friendName, bankAccountId, transactions } = await request.json();
+    const { friendId, bankAccountId } = await request.json();
 
-    if (!friendName || !bankAccountId || !Array.isArray(transactions)) {
+    if (!friendId || !bankAccountId) {
       return NextResponse.json({ 
-        error: 'Friend name, bank account ID, and transactions array are required' 
+        error: 'Friend ID and bank account ID are required' 
       }, { status: 400 });
     }
 
-    if (!EXPENSES_DB_ID) {
-      return NextResponse.json({ error: 'Expense database ID is not configured' }, { status: 500 });
+    const offsetEntries = [];
+    const accountId = parseInt(bankAccountId);
+    const friendDbId = parseInt(friendId);
+    
+    if (isNaN(accountId) || isNaN(friendDbId)) {
+      return NextResponse.json({ error: 'Invalid bank account ID or friend ID' }, { status: 400 });
     }
 
-    const offsetEntries = [];
+    // Fetch all unsettled transactions for this friend
+    const fetchTransactionsSql = `
+      SELECT 
+        st.SPLITWISE_TRANSACTION_ID as SPLITWISE_TX_ID,
+        st.TRANSACTION_ID,
+        st.SPLITED_AMOUNT,
+        t.DATE,
+        t.NOTES,
+        t.CATEGORY_ID,
+        t.SUB_CATEGORY_ID,
+        sf.NAME as FRIEND_NAME
+      FROM SplitwiseTransactions st
+      INNER JOIN Transactions t ON st.TRANSACTION_ID = t.ID
+      INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
+      WHERE st.FRIEND_ID = ?
+      ORDER BY t.DATE ASC
+    `;
 
-    // Fetch each transaction and create offsetting entry
-    for (const transaction of transactions) {
-      const { id: transactionId, amount: transactionAmount, splitwiseId:splitwiseId } = transaction;
-      
+    const transactions = await query<{
+      SPLITWISE_TX_ID: number;
+      TRANSACTION_ID: number;
+      SPLITED_AMOUNT: number;
+      DATE: number;
+      NOTES: string;
+      CATEGORY_ID: number | null;
+      SUB_CATEGORY_ID: number | null;
+      FRIEND_NAME: string;
+    }>(fetchTransactionsSql, [friendDbId]);
+
+    console.log(`Found ${transactions.length} unsettled transactions for friend ID ${friendDbId}`);
+
+    if (transactions.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: 'No unsettled transactions found for this friend',
+        offsetEntries: [],
+      });
+    }
+
+    const friendName = transactions[0].FRIEND_NAME;
+
+    // Process each transaction and create offsetting entry
+    for (const tx of transactions) {
       try {
-        const transactionPage = await notion.pages.retrieve({ page_id: transactionId });
-        const properties = (transactionPage as any).properties;
-        
-        // Use the amount from the API call (which might be processed/filtered) rather than original
-        const settlementAmount = transactionAmount || properties.Amount?.number || 0;
-        const originalDate = properties.Date?.date?.start || new Date().toISOString().split('T')[0];
-        const category = properties["Category"]["relation"][0]["id"]
-        const subCategory = properties['Sub Category']["relation"][0]["id"]
-        const description = properties.Expense?.title?.[0]?.plain_text || '';
+        const settlementAmount = tx.SPLITED_AMOUNT;
+        const description = tx.NOTES || 'Splitwise expense';
 
-        const propertiesObj: { [key: string]: any } = {
-          "Date": { date: { start: originalDate } },
-          "Expense": { title: [{ text: { content: `Settlement from: ${friendName} Des: ${description}` } }] },
-          "Amount": { number: -settlementAmount },
-          "Category": { relation: [{ id: category }] },
-          "Bank Account": { relation: [{ id: bankAccountId }] },
-        };
+        // Create offsetting settlement entry (negative amount = income/settlement)
+        const settlementSql = `
+          INSERT INTO Transactions 
+          (AMOUNT, DATE, NOTES, TO_ACCOUNT_ID, CATEGORY_ID, SUB_CATEGORY_ID, TRANSCATION_TYPE) 
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `;
 
-        if(subCategory)
-        {
-            propertiesObj["Sub Category"] = { relation: [{ id: subCategory }] };
-        }
+        const settlementResult = await query(settlementSql, [
+          -Math.abs(settlementAmount), // Negative amount = settlement received (income)
+          tx.DATE,
+          `Settlement from: ${friendName} - ${description}`,
+          accountId, // Money received in this bank account (TO_ACCOUNT_ID for income)
+          tx.CATEGORY_ID,
+          tx.SUB_CATEGORY_ID,
+          TransactionType.EXPENSE // Settlement is recorded as income
+        ]);
 
-        const offsetEntry = await notion.pages.create({
-          parent: { database_id: EXPENSES_DB_ID },
-          properties: propertiesObj,
-        });
+        console.log(`Created settlement transaction ID: ${settlementResult.insertId}`);
 
-          try {
-            await notion.pages.update({
-              page_id: splitwiseId,
-              archived: true
-            });
-          } catch (deleteError) {
-            console.error(`Error archiving splitwise page ${splitwiseId}:`, deleteError);
-            // Continue even if deletion fails
-          }
-        
+        // Delete the Splitwise transaction entry
+        await query(
+          `DELETE FROM SplitwiseTransactions WHERE TRANSACTION_ID = ?`,
+          [tx.TRANSACTION_ID]
+        );
+        console.log(`Deleted  transaction ${tx.TRANSACTION_ID}`);
+
 
         offsetEntries.push({
-          id: offsetEntry.id,
-          originalTransactionId: transactionId,
+          id: settlementResult.insertId,
+          originalTransactionId: tx.TRANSACTION_ID,
+          splitwiseTransactionId: tx.SPLITWISE_TX_ID,
           amount: -settlementAmount,
           description: `Settlement from: ${friendName}`,
         });
 
       } catch (error) {
-        console.error(`Error creating offset for transaction ${transactionId}:`, error);
+        console.error(`Error creating settlement for transaction ${tx.TRANSACTION_ID}:`, error);
         // Continue with other transactions even if one fails
       }
     }

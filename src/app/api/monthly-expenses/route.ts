@@ -1,25 +1,15 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { Client } from '@notionhq/client';
-import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
-
-// Initialize Notion client
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const EXP_SUB_CATEGORY_DB_ID = "1c570d7fb20b80beaee5c855f75c987f";
-const EXPENSE_CATEGORY_DB_ID = "1c570d7fb20b813dbd11e369874aa147";
-// const INVESTMENT_DB_ID = process.env.INVESTMENT_DB_ID;
-const EXPENSES_DB_ID = process.env.EXPENSE_DB_ID;
-const categoryCache: Map<string, string> = new Map();
-const subCategoryCache: Map<string, string> = new Map();
-const subCategoryToCategoryMap: Map<string, string> = new Map(); // Maps subcategory ID to category ID
+import { query, TransactionType, CategoryType } from '@/lib/db';
+import type { Transaction as DBTransaction, Category as DBCategory, SubCategory as DBSubCategory } from '@/types/database';
 // Interfaces for data structures
 interface Transaction {
     id: string;
     date: string | null;
     description: string;
     amount: number;
-    type: 'Income' | 'Expense' | 'Transfer' | 'Other';
+    type: 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Other';
     category?: string;
     subCategory?: string;
 }
@@ -31,8 +21,18 @@ interface ExpenseItem {
   subCategory: string;
   expense: string;
 }
-const monthMap: Record<string, number> = 
-{
+
+interface Category {
+  id: string;
+  name: string;
+}
+interface SubCategory {
+  id: string;
+  name: string;
+  categoryId: string;
+}
+
+const monthMap: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 };
@@ -51,132 +51,110 @@ function getFromToDates(month: string, year: number) {
 
 function formatDateToDDMMYYYY(date: Date): string {
     const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
+    const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
     return `${year}-${month}-${day}`;
 }
 
-async function loadCategoryCache() 
-{
-  if (!EXPENSE_CATEGORY_DB_ID) return;
-  const results = await fetchAllPagesFromNotion(notion, EXPENSE_CATEGORY_DB_ID);
-  results.forEach((page: any) => 
-    {
-    const id = page.id;
-    const name = page.properties["Category"]?.title?.[0]?.plain_text;
-    categoryCache.set(id, name);
-  });
+async function fetchCategoriesFromDB(): Promise<Category[]> {
+  try {
+    const sql = `
+      SELECT ID, CATEGORY_NAME
+      FROM Category
+      WHERE CATEGORY_TYPE = ?
+      ORDER BY CATEGORY_NAME
+    `;
+    
+    const categories = await query<DBCategory>(sql, [CategoryType.EXPENSE]);
+    
+    return categories.map((cat: DBCategory) => ({
+      id: cat.ID.toString(),
+      name: cat.CATEGORY_NAME
+    }));
+  } catch (error) {
+    console.error("Error fetching categories from database:", error);
+    throw new Error("Failed to fetch categories from database.");
+  }
 }
 
-async function loadSubCategoryCache() 
-{
-  if (!EXP_SUB_CATEGORY_DB_ID) return;
-  const results = await fetchAllPagesFromNotion(notion, EXP_SUB_CATEGORY_DB_ID);
-  results.forEach((page: any) => 
-    {
-      const id = page.id;
-      const categoryId = page.properties["Category Name"]["relation"][0]["id"];
-      const name = page.properties["Sub Category"]?.title?.[0]?.plain_text;
-      subCategoryCache.set(id, name);
-      subCategoryToCategoryMap.set(id, categoryId);
-  });
+async function fetchSubCategoriesFromDB(): Promise<SubCategory[]> {
+  try {
+    const sql = `
+      SELECT sc.ID, sc.SUB_CATEGORY_NAME, sc.CATEGORY_ID
+      FROM SubCategory sc
+      JOIN Category c ON sc.CATEGORY_ID = c.ID
+      WHERE c.CATEGORY_TYPE = ?
+      ORDER BY sc.SUB_CATEGORY_NAME
+    `;
+    
+    const subCategories = await query<DBSubCategory>(sql, [CategoryType.EXPENSE]);
+    
+    return subCategories.map((sub: DBSubCategory) => ({
+      id: sub.ID.toString(),
+      name: sub.SUB_CATEGORY_NAME,
+      categoryId: sub.CATEGORY_ID.toString()
+    }));
+  } catch (error) {
+    console.error("Error fetching subcategories from database:", error);
+    throw new Error("Failed to fetch subcategories from database.");
+  }
 }
 
-async function fetchMonthlyExpensesFromNotion({
+async function fetchMonthlyExpensesFromDB({
   month,
   year
 }: {
   month?: string;
   year?: string;
 }): Promise<Transaction[]> {
-  if (!EXPENSES_DB_ID) {
-    throw new Error("EXPENSES_DB_ID is not set in environment variables.");
-  }
-
   try {
     const { startDate, endDate } = getFromToDates(String(month), Number(year));
-    const from = formatDateToDDMMYYYY(startDate);
-    const to = formatDateToDDMMYYYY(endDate);
-    const filters: any = {};
-    if (from || to) {
-      filters["and"] = [];
-      if (from) {
-        filters["and"].push({
-          property: "Date",
-          date: { on_or_after: from }
-        });
-      }
-      if (to) {
-        filters["and"].push({
-          property: "Date",
-          date: { on_or_before: to }
-        });
-      }
-    }
-    if(categoryCache.size === 0) 
-      {
-        console.log("Category cache is empty, loading from Notion...");
-        await loadCategoryCache();
+    const fromTimestamp = startDate.getTime();
+    const toTimestamp = endDate.getTime();
 
-      }
+    const sql = `
+      SELECT 
+        t.ID,
+        t.DATE,
+        t.AMOUNT,
+        t.NOTES,
+        c.CATEGORY_NAME,
+        sc.SUB_CATEGORY_NAME
+      FROM Transactions t
+      LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
+      LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
+      WHERE t.TRANSCATION_TYPE = ?
+        AND t.DATE >= ?
+        AND t.DATE <= ?
+      ORDER BY t.DATE DESC
+    `;
 
-    if(subCategoryCache.size === 0)
-      {
-        console.log("Sub Category cache is empty, loading from Notion...");
-        await loadSubCategoryCache();
-      }
-    
-    const results = await fetchAllPagesFromNotion(notion, EXPENSES_DB_ID, { filter: filters });
-          console.log("Total pages fetched:", results.length);
+    const transactions = await query<{
+      ID: number;
+      DATE: number;
+      AMOUNT: number;
+      NOTES: string;
+      CATEGORY_NAME: string;
+      SUB_CATEGORY_NAME: string;
+    }>(sql, [TransactionType.EXPENSE, fromTimestamp, toTimestamp]);
 
-    const items = await Promise.all(
-      results.map(async (page: any) => {
+    console.log(`Fetched ${transactions.length} expense transactions`);
 
-
-        const prop = (page as any).properties;
-
-        const amount = Number(prop["Amount"]["number"])
-        if (amount === 0) return null;
-        const description =prop['Expense']['title'][0]?.['plain_text'] || 'No Description';
-        const date = prop['Date']?.['date']?.['start'] || null;
-        
-        let subCategoryId = prop["Sub Category"]["relation"][0]?.["id"]
-        let categoryId = prop["Category"]["relation"][0]?.["id"]
-                
-        let categoryName = ""
-        if(categoryId != undefined) 
-        {
-          // Check if category is already cached
-          categoryName = categoryCache.get(categoryId) ?? "";
-         
-        }
-        let subCategoryName = ""
-        if(subCategoryId != undefined)
-        {
-          subCategoryName = subCategoryCache.get(subCategoryId) ?? "";
-        
-        }
-        // console.log("Date : ", date, " Desc : ", description, " Amount : ", amount, " Category : ", categoryName, " Sub Category : ", subCategoryName);
-        if(categoryName == "" && subCategoryName == "")
-        {
-          return null;
-        }
-        return {
-          id: page.id,
-          date: date,
-          description: description,
-          amount: amount,
-          type: 'Expense',
-          category: categoryName,
-          subCategory: subCategoryName,
-        } as Transaction;
-      })
-    );
-
-    return items.filter(Boolean) as Transaction[];
+    return transactions
+      .filter((tx: any) => tx.AMOUNT !== 0)
+      .map((tx: any) => ({
+        id: tx.ID.toString(),
+        date: new Date(tx.DATE).toISOString().split('T')[0],
+        description: tx.NOTES || 'No Description',
+        amount: Number(tx.AMOUNT),
+        type: 'Expense' as const,
+        category: tx.CATEGORY_NAME || '',
+        subCategory: tx.SUB_CATEGORY_NAME || ''
+      }))
+      .filter((tx: any) => tx.category || tx.subCategory); // Filter out transactions without category or subcategory
   } catch (error) {
-    console.error("Error fetching expenses from Notion:", error);
-    throw new Error("Failed to fetch expenses from Notion.");
+    console.error("Error fetching expenses from database:", error);
+    throw new Error("Failed to fetch expenses from database.");
   }
 }
 
@@ -190,6 +168,16 @@ function groupTransactions(transactions: Transaction[], month: string, year: num
       if (!groupedMap[cat][sub]) groupedMap[cat][sub] = 0;
       groupedMap[cat][sub] += amount;
     });
+
+    // Iterate and print the grouped map content
+    // console.log('=== Grouped Map Content (Expenses) ===');
+    // Object.entries(groupedMap).forEach(([category, subMap]) => {
+    //   console.log(`Category: ${category}`);
+    //   Object.entries(subMap).forEach(([subCategory, total]) => {
+    //     console.log(`  SubCategory: "${subCategory}", Total: ${total}, Type: ${typeof total}`);
+    //   });
+    // });
+    // console.log('=== End Grouped Map ===');
 
     // Convert to ExpenseItem[]
     const groupedArray: ExpenseItem[] = Object.entries(groupedMap).flatMap(
@@ -211,27 +199,25 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const month = searchParams.get("month");
     const year = searchParams.get("year");
-    if (!process.env.NOTION_API_KEY) {
-      return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
-    }
+    
     if (!month || !year) {
-        return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
+      return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
     }
     
-    const rawTransactions = await fetchMonthlyExpensesFromNotion({ month, year });
+    const [rawTransactions, categories, subCategories] = await Promise.all([
+      fetchMonthlyExpensesFromDB({ month, year }),
+      fetchCategoriesFromDB(),
+      fetchSubCategoriesFromDB()
+    ]);
+
     const monthlyExpenses = groupTransactions(rawTransactions, month, Number(year));
+
+    // Sort transactions by date (already sorted DESC in query, but keeping for consistency)
     rawTransactions.sort((a, b) => {
-          if (!a.date) return -1;
-          if (!b.date) return 1;
-          return new Date(a.date).getTime() - new Date(b.date).getTime();
-        });
-
-    const categories = Array.from(categoryCache.entries()).map(([id, name]) => ({ id, name }));
-    const subCategories = Array.from(subCategoryCache.entries()).map(([id, name]) => {
-      const categoryId = subCategoryToCategoryMap.get(id) || '';
-      return { id, name, categoryId };
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
     });
-
 
     return NextResponse.json({
       monthlyExpenses,
@@ -240,8 +226,8 @@ export async function GET(request: NextRequest) {
       subCategories
     });
   } catch (error) {
-    console.error("Error in /api/monthly-expense:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while fetching financial details.";
+    console.error("Error in /api/monthly-expenses:", error);
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while fetching expense details.";
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

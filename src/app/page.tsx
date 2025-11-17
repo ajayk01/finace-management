@@ -223,6 +223,17 @@ export default function DashboardPage() {
       }
   }, []);
 
+  const fetchInvestmentAccounts = useCallback(async () => {
+      try {
+          const res = await fetch('/api/investment-accounts');
+          if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
+          const data = await res.json();
+          setInvestmentCategories(data || []);
+      } catch (error) {
+          console.error('Error fetching investment accounts:', error);
+      }
+  }, []);
+
   const calculateXIRRForCategory = useCallback(async (categoryId: string): Promise<number | undefined> => {
     try {
       const res = await fetch('/api/calculate-xirr', {
@@ -410,7 +421,8 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchBankDetails();
     fetchCreditCardDetails();
-  }, [fetchBankDetails, fetchCreditCardDetails]);
+    fetchInvestmentAccounts();
+  }, [fetchBankDetails, fetchCreditCardDetails, fetchInvestmentAccounts]);
   
   useEffect(() => {
     fetchExpenses(selectedExpenseMonth, selectedExpenseYear);
@@ -425,7 +437,6 @@ export default function DashboardPage() {
       const cacheKey = `investments-${selectedInvestmentYear}-${selectedInvestmentMonth}`;
       if (dataCache.current[cacheKey]) {
         setRawMonthlyInvestments(dataCache.current[cacheKey].rawTransactions);
-        setInvestmentCategories(dataCache.current[cacheKey].categories);
         setIsInvestmentsLoading(false);
         return;
       }
@@ -434,12 +445,10 @@ export default function DashboardPage() {
         const res = await fetch(`/api/monthly-investments?month=${selectedInvestmentMonth}&year=${selectedInvestmentYear}`);
         if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
         const data = await res.json();
-        // Assuming the new API returns raw transactions and categories
+        // Assuming the new API returns raw transactions
         const rawTransactions = data.rawTransactions || [];
-        const categories = data.investmentAccounts || [];
         setRawMonthlyInvestments(rawTransactions);
-        setInvestmentCategories(categories);
-        dataCache.current[cacheKey] = { rawTransactions, categories };
+        dataCache.current[cacheKey] = { rawTransactions };
       } catch (error) {
         setInvestmentsError(error instanceof Error ? error.message : "An unknown error occurred");
       } finally {
@@ -456,11 +465,9 @@ export default function DashboardPage() {
         const res = await fetch(`/api/total-investments`);
         if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch total investments');
         const data = await res.json();
-        // Assuming the new API returns raw transactions and categories
+        // Get raw transactions only (investment accounts fetched separately)
         const rawTransactions = data.rawTransactions || [];
-        const categories = data.investmentAccounts || [];
         setTotalInvestments(rawTransactions);
-        setInvestmentCategories(categories);
       } catch (error) {
         setTotalInvestmentsError(error instanceof Error ? error.message : "An unknown error occurred");
       } finally {

@@ -1,14 +1,8 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { Client } from '@notionhq/client';
-import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
-
-// Initialize Notion client
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const EXPENSE_DB_ID = process.env.EXPENSE_DB_ID;
-const INCOME_DB_ID = process.env.INCOME_DB_ID;
-const INVESTMENT_DB_ID = process.env.INVESTMENT_TRANS_DB_ID;
+import { query, TransactionType } from '@/lib/db';
+import type { Transaction as DBTransaction } from '@/types/database';
 
 interface Transaction {
     id: string;
@@ -18,150 +12,139 @@ interface Transaction {
     type: 'Income' | 'Expense' | 'Investment' | 'Other';
 }
 
-const monthMap: Record<string, number> = 
-{
+const monthMap: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 };
+
 function getFromToDates(month: string, year: number) {
   const monthIndex = monthMap[month.toLowerCase()];
 
-    if (monthIndex === undefined) {
-        throw new Error("Invalid month provided. Please use full month names (e.g., 'Jan', 'February').");
-    }
+  if (monthIndex === undefined) {
+    throw new Error("Invalid month provided. Please use full month names (e.g., 'Jan', 'February').");
+  }
 
-    const startDate = new Date(year, monthIndex, 1);
-    const endDate = new Date(year, monthIndex + 1, 0);
+  const startDate = new Date(year, monthIndex, 1);
+  const endDate = new Date(year, monthIndex + 1, 0);
 
-    return { startDate, endDate };
+  return { startDate, endDate };
 }
 
-async function fetchFromDatabase(
-    databaseId: string | undefined, 
-    creditCardId: string, 
-    from: string | null, 
-    to: string | null, 
-    type: Transaction['type'], 
-    propertyNames: { date: string, amount: string, description: string, relation: string }
+async function fetchCreditCardTransactionsFromDB(
+  creditCardId: string,
+  fromTimestamp?: number,
+  toTimestamp?: number
 ): Promise<Transaction[]> {
-    if (!databaseId) {
-        // Silently fail if DB ID is not provided
-        return [];
+  try {
+    // Build SQL query with optional date filters
+    let sql = `
+      SELECT 
+        t.ID,
+        t.DATE,
+        t.AMOUNT,
+        t.NOTES,
+        t.TRANSCATION_TYPE,
+        t.FROM_ACCOUNT_ID,
+        t.TO_ACCOUNT_ID
+      FROM Transactions t
+      WHERE (t.FROM_ACCOUNT_ID = ? OR t.TO_ACCOUNT_ID = ?)
+    `;
+
+    const params: any[] = [creditCardId, creditCardId];
+
+    if (fromTimestamp !== undefined && toTimestamp !== undefined) {
+      sql += ` AND t.DATE >= ? AND t.DATE <= ?`;
+      params.push(fromTimestamp, toTimestamp);
     }
 
-    try {
-        const filterConditions: any[] = [
-            {
-                property: propertyNames.relation,
-                relation: {
-                    contains: creditCardId,
-                },
-            },
-        ];
-        
-        if (from) {
-            filterConditions.push({
-                property: propertyNames.date,
-                date: {
-                    on_or_after: from,
-                },
-            });
+    sql += ` ORDER BY t.DATE DESC`;
+
+    const transactions = await query<{
+      ID: number;
+      DATE: number;
+      AMOUNT: number;
+      NOTES: string;
+      TRANSCATION_TYPE: number;
+      FROM_ACCOUNT_ID: number;
+      TO_ACCOUNT_ID: number;
+    }>(sql, params);
+
+    console.log(`Fetched ${transactions.length} credit card transactions for account ${creditCardId}`);
+
+    // Map to Transaction interface and determine type
+    return transactions.map((tx: any) => {
+      let type: Transaction['type'] = 'Other';
+      
+      // Determine transaction type based on TRANSCATION_TYPE and account direction
+      if (tx.TRANSCATION_TYPE === TransactionType.EXPENSE) {
+        // For credit cards, expenses are FROM the credit card (charges)
+        type = 'Expense';
+      } else if (tx.TRANSCATION_TYPE === TransactionType.INCOME) {
+        // Income to credit card would be refunds or rewards
+        type = 'Income';
+      } else if (tx.TRANSCATION_TYPE === TransactionType.TRANSFER) {
+        // Transfers TO credit card are payments (show as Income to reduce balance)
+        // Special handling: if it's a payment to credit card (TO_ACCOUNT_ID = creditCardId), show as 'Income'
+        if (tx.TO_ACCOUNT_ID.toString() === creditCardId) {
+          type = 'Income';
+        } else {
+          type = 'Other';
         }
-        if (to) {
-            filterConditions.push({
-                property: propertyNames.date,
-                date: {
-                    on_or_before: to,
-                },
-            });
-        }
+      }
 
-        const results = await fetchAllPagesFromNotion(notion, databaseId, {
-            filter: {
-                and: filterConditions,
-            },
-        });
-
-        // Use a type guard to filter out any malformed pages before mapping
-        return results.map((page: any): Transaction => {
-            const properties = page.properties;
-            // Title properties can have different names, e.g., 'Expense' or 'Name'
-            const descriptionProp = properties[propertyNames.description]['title'][0]['plain_text'];
-            const amountProp = properties[propertyNames.amount]['number'];
-            const dateProp = properties[propertyNames.date]['date']?.['start'] || null;
-
-
-            let transactionType = type;
-            // If it's an expense and the description is "CC bill", treat it as income.
-            if (type === 'Expense' && descriptionProp.toLowerCase() === 'cc bill') {
-                transactionType = 'Income';
-            }
-
-            return {
-                id: page.id,
-                date: dateProp,
-                description: descriptionProp,
-                amount: amountProp,
-                type: transactionType,
-            };
-        });
-    } catch (error) {
-        console.log(`Error fetching ${type} transactions from Notion (DB ID: ${databaseId}):`, error);
-        return []; // Return empty array on error to not fail the entire request
-    }
+      return {
+        id: tx.ID.toString(),
+        date: new Date(tx.DATE).toISOString().split('T')[0],
+        description: tx.NOTES || 'No Description',
+        amount: tx.AMOUNT,
+        type
+      };
+    });
+  } catch (error) {
+    console.error("Error fetching credit card transactions from database:", error);
+    throw new Error("Failed to fetch credit card transactions from database.");
+  }
 }
 
 
 export async function GET(request: NextRequest) {
-    try {
-        const { searchParams } = new URL(request.url);
-        const creditCardId = searchParams.get('creditCardId');
-        const month = searchParams.get('month');
-        const year = searchParams.get('year');
+  try {
+    const { searchParams } = new URL(request.url);
+    const creditCardId = searchParams.get('creditCardId');
+    const month = searchParams.get('month');
+    const year = searchParams.get('year');
 
-        if (!process.env.NOTION_API_KEY) {
-            return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
-        }
-        if (!creditCardId) {
-            return NextResponse.json({ error: "creditCardId is a required query parameter." }, { status: 400 });
-        }
-
-        let from = null;
-        let to = null;
-
-        if(month && year) {
-            const { startDate, endDate } = getFromToDates(month, parseInt(year, 10));
-            from = startDate.toISOString().split('T')[0];
-            to = endDate.toISOString().split('T')[0];
-        }
-
-        const [expenseTransactions, incomeTransactions, investmentTransactions] = await Promise.all([
-            // Fetch Expenses
-            fetchFromDatabase(EXPENSE_DB_ID, creditCardId, from, to, 'Expense', {
-                date: 'Date', amount: 'Amount', description: 'Expense', relation: 'Credit Card Account'
-            }),
-            // Fetch Incomes
-            fetchFromDatabase(INCOME_DB_ID, creditCardId, from, to, 'Income', {
-                date: 'Date', amount: 'Amount', description: 'Description', relation: 'Credit Card Account'
-            }),
-            // Fetch Investments
-            fetchFromDatabase(INVESTMENT_DB_ID, creditCardId, from, to, 'Investment', {
-                date: 'Investment Date', amount: 'Invested Amount', description: 'Description', relation: 'Bank Account'
-            })
-        ]);
-        const allTransactions = [...expenseTransactions, ...incomeTransactions, ...investmentTransactions];
-        
-        allTransactions.sort((a, b) => {
-            if (!a.date) return 1;
-            if (!b.date) return -1;
-            return new Date(b.date).getTime() - new Date(a.date).getTime();
-        });
-
-        return NextResponse.json({ transactions: allTransactions });
-
-    } catch (error) {
-        console.error("Error in /api/credit-card-transactions:", error);
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while fetching transactions.";
-        return NextResponse.json({ error: errorMessage }, { status: 500 });
+    if (!creditCardId) {
+      return NextResponse.json({ error: "creditCardId is a required query parameter." }, { status: 400 });
     }
+
+    let fromTimestamp: number | undefined;
+    let toTimestamp: number | undefined;
+
+    if (month && year) {
+      const { startDate, endDate } = getFromToDates(month, parseInt(year, 10));
+      fromTimestamp = startDate.getTime();
+      toTimestamp = endDate.getTime();
+    }
+
+    const allTransactions = await fetchCreditCardTransactionsFromDB(
+      creditCardId,
+      fromTimestamp,
+      toTimestamp
+    );
+
+    // Sort by date descending (already sorted in query, but keeping for consistency)
+    allTransactions.sort((a, b) => {
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+
+    return NextResponse.json({ transactions: allTransactions });
+
+  } catch (error) {
+    console.error("Error in /api/credit-card-transactions:", error);
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while fetching transactions.";
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
 }

@@ -1,15 +1,8 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { Client } from '@notionhq/client';
-import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
-
-// Initialize Notion client
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const INVESTMENT_TRANS_DB_ID = process.env.INVESTMENT_TRANS_DB_ID;
-const INVESTMENT_ACCOUNTS_DB_ID = process.env.INVESTMENT_DB_ID;
-
-const investmentAccountCache: Map<string, string> = new Map();
+import { query, TransactionType, AccountType } from '@/lib/db';
+import type { Transaction as DBTransaction, Account } from '@/types/database';
 
 // Interfaces for data structures
 interface Transaction {
@@ -30,8 +23,12 @@ interface ExpenseItem {
   expense: string;
 }
 
-const monthMap: Record<string, number> = 
-{
+interface InvestmentAccount {
+  id: string;
+  name: string;
+}
+
+const monthMap: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 };
@@ -51,80 +48,84 @@ function getFromToDates(month: string, year: number) {
 
 function formatDateToDDMMYYYY(date: Date): string {
     const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
+    const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
     return `${year}-${month}-${day}`;
 }
 
-async function loadInvestmentAccountCache() {
-  if (!INVESTMENT_ACCOUNTS_DB_ID || investmentAccountCache.size > 0) return;
-  const results = await fetchAllPagesFromNotion(notion, INVESTMENT_ACCOUNTS_DB_ID);
-  results.forEach((page: any) => {
-    const id = page.id;
-    const name = page.properties["Investment Account"]?.title?.[0]?.plain_text;
-    if (id && name) investmentAccountCache.set(id, name);
-  });
+async function fetchInvestmentAccountsFromDB(): Promise<InvestmentAccount[]> {
+  try {
+    const sql = `
+      SELECT ID, ACCOUNT_NAME
+      FROM Accounts
+      WHERE ACCOUNT_TYPE = ?
+        AND IS_ACTIVE = 1
+      ORDER BY ACCOUNT_NAME
+    `;
+    
+    const accounts = await query<Account>(sql, [AccountType.INVESTMENT]);
+    
+    return accounts.map((acc: Account) => ({
+      id: acc.ID.toString(),
+      name: acc.ACCOUNT_NAME
+    }));
+  } catch (error) {
+    console.error("Error fetching investment accounts from database:", error);
+    throw new Error("Failed to fetch investment accounts from database.");
+  }
 }
 
-async function fetchMonthlyInvestmentsFromNotion({
+async function fetchMonthlyInvestmentsFromDB({
   month,
   year
 }: {
   month?: string;
   year?: string;
 }): Promise<Transaction[]> {
-  if (!INVESTMENT_TRANS_DB_ID) {
-    throw new Error("INVESTMENT_TRANS_DB_ID is not set in environment variables.");
-  }
-
   try {
     const { startDate, endDate } = getFromToDates(String(month), Number(year));
-    const from = formatDateToDDMMYYYY(startDate);
-    const to = formatDateToDDMMYYYY(endDate);
-    
-    const filters: any = { and: [] };
-    filters.and.push({
-      property: "Investment Date",
-      date: { on_or_after: from }
-    });
-    filters.and.push({
-      property: "Investment Date",
-      date: { on_or_before: to }
-    });
+    const fromTimestamp = startDate.getTime();
+    const toTimestamp = endDate.getTime();
 
-    await loadInvestmentAccountCache();
+    const sql = `
+      SELECT 
+        t.ID,
+        t.DATE,
+        t.AMOUNT,
+        t.NOTES,
+        a.ACCOUNT_NAME
+      FROM Transactions t
+      LEFT JOIN Accounts a ON t.TO_ACCOUNT_ID = a.ID
+      WHERE t.TRANSCATION_TYPE = ?
+        AND t.DATE >= ?
+        AND t.DATE <= ?
+      ORDER BY t.DATE DESC
+    `;
 
-    const results = await fetchAllPagesFromNotion(notion, INVESTMENT_TRANS_DB_ID, { filter: filters });
+    const transactions = await query<{
+      ID: number;
+      DATE: number;
+      AMOUNT: number;
+      NOTES: string;
+      ACCOUNT_NAME: string;
+    }>(sql, [TransactionType.INVESTMENT, fromTimestamp, toTimestamp]);
 
-    const items = await Promise.all(
-      results.map(async (page: any) => {
-        const prop = (page as any).properties;
+    console.log(`Fetched ${transactions.length} investment transactions`);
 
-        const amount = Number(prop["Invested Amount"]?.number) || 0;
-        if (amount === 0) return null;
-
-        const description = prop['Description']?.title?.[0]?.plain_text || 'No Description';
-        const date = prop['Investment Date']?.date?.start || null;
-        
-        const investmentAccountId = prop["Invested Account"]?.relation?.[0]?.id;
-        const categoryName = investmentAccountId ? investmentAccountCache.get(investmentAccountId) : "Uncategorized";
-
-        return {
-          id: page.id,
-          date,
-          description,
-          amount,
-          type: 'Investment',
-          category: categoryName,
-          subCategory: '', // Investments don't have sub-categories in this model
-        } as Transaction;
-      })
-    );
-
-    return items.filter(Boolean) as Transaction[];
+    return transactions
+      .filter((tx: any) => tx.AMOUNT !== 0)
+      .map((tx: any) => ({
+        id: tx.ID.toString(),
+        date: new Date(tx.DATE).toISOString().split('T')[0],
+        description: tx.NOTES || 'No Description',
+        amount: Number(tx.AMOUNT),
+        type: 'Investment' as const,
+        category: tx.ACCOUNT_NAME || 'Uncategorized',
+        subCategory: '' // Investments don't have sub-categories
+      }));
   } catch (error) {
-    console.error("Error fetching investments from Notion:", error);
-    throw new Error("Failed to fetch investments from Notion.");
+    console.error("Error fetching investments from database:", error);
+    throw new Error("Failed to fetch investments from database.");
   }
 }
 
@@ -138,7 +139,17 @@ function groupTransactions(transactions: Transaction[], month: string, year: num
       if (!groupedMap[cat][sub]) groupedMap[cat][sub] = 0;
       groupedMap[cat][sub] += amount;
     });
-
+    
+    // // Iterate and print the grouped map content
+    // console.log('=== Grouped Map Content ===');
+    // Object.entries(groupedMap).forEach(([category, subMap]) => {
+    //   console.log(`Category: ${category}`);
+    //   Object.entries(subMap).forEach(([subCategory, total]) => {
+    //     console.log(`  SubCategory: "${subCategory}", Total: ${total}, Type: ${typeof total}`);
+    //   });
+    // });
+    // console.log('=== End Grouped Map ===');
+    
     return Object.entries(groupedMap).flatMap(
       ([category, subMap]) =>
         Object.entries(subMap).map(([subCategory, total]) => ({
@@ -156,25 +167,24 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const month = searchParams.get("month");
     const year = searchParams.get("year");
-    if (!process.env.NOTION_API_KEY) {
-      return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
-    }
+
     if (!month || !year) {
-        return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
+      return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
     }
 
-    await loadInvestmentAccountCache();
-    
-    const rawTransactions = await fetchMonthlyInvestmentsFromNotion({ month, year });
-    const monthlyInvestments = groupTransactions(rawTransactions, month, Number(year));
-    
-    rawTransactions.sort((a, b) => {
-        if (!a.date) return 1;
-        if (!b.date) return -1;
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
+    const [rawTransactions, investmentAccounts] = await Promise.all([
+      fetchMonthlyInvestmentsFromDB({ month, year }),
+      fetchInvestmentAccountsFromDB()
+    ]);
 
-    const investmentAccounts = Array.from(investmentAccountCache.entries()).map(([id, name]) => ({ id, name }));
+    const monthlyInvestments = groupTransactions(rawTransactions, month, Number(year));
+    console.log("monthlyInvestments :"+monthlyInvestments)
+    // Sort transactions by date (already sorted DESC in query, but keeping for consistency)
+    rawTransactions.sort((a, b) => {
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
 
     return NextResponse.json({
       monthlyInvestments,
@@ -182,7 +192,7 @@ export async function GET(request: NextRequest) {
       investmentAccounts,
     });
   } catch (error) {
-    console.error("Error in /api/monthly-investment:", error);
+    console.error("Error in /api/monthly-investments:", error);
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while fetching investment details.";
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }

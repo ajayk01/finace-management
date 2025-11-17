@@ -1,54 +1,35 @@
-
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { Client } from '@notionhq/client';
-import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
+import { query, AccountType } from '@/lib/db';
+import { Account, CreditCardDetails } from '@/types/database';
 
-// Initialize Notion client
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const NOTION_CREDIT_CARDS_DB_ID = process.env.NOTION_CREDIT_CARDS_DB_ID;
-
-async function fetchCreditCardsFromNotion() 
-{
-  if (!NOTION_CREDIT_CARDS_DB_ID) {
-    throw new Error("NOTION_CREDIT_CARDS_DB_ID is not set in environment variables.");
-  }
+async function fetchCreditCardsFromDB() {
   try {
-    const results = await fetchAllPagesFromNotion(notion, NOTION_CREDIT_CARDS_DB_ID);
-
-    return results.map((page) => 
-    {
-      const cardNameProperty = (page as any).properties?.['Name']["title"][0]["plain_text"]; 
-      const usedAmountProperty = (page as any).properties?.['Total Used']["formula"]; 
-      const totalLimitProperty = (page as any).properties?.['Total Limit']["formula"];
-      const isActive = (page as any).properties?.['Is Active']["number"]
-      if(isActive == 0)
-      {
-          return null; //Skip inactive cards
-      }
-      
-      const type = (page as any)['icon']['type']
-      const logo = (page as any)['icon'][type]["url"];
-      return {
-        id: (page as any).id,
-        name: cardNameProperty  || "Unnamed Card",
-        usedAmount: usedAmountProperty?.number || 0,
-        totalLimit: totalLimitProperty?.number || 0,
-        logo: logo || "",
-      };
-    }).filter(card => card !== null).sort((a, b) => b.usedAmount - a.usedAmount);
+    const creditCards = await query<Account & { CURRENT_REWARD_POINTS?: number }>(
+      `SELECT ID, ACCOUNT_NAME, CURRENT_BALANCE, INITIAL_BALANCE, ACCOUNT_TYPE, IS_ACTIVE
+       FROM Accounts
+       WHERE ACCOUNT_TYPE = ? AND IS_ACTIVE = 1
+       ORDER BY ACCOUNT_NAME`,
+      [AccountType.CREDIT_CARD]
+    );
+    
+    return creditCards.map((card: Account & { CURRENT_REWARD_POINTS?: number }) => ({
+      id: card.ID.toString(),
+      name: card.ACCOUNT_NAME,
+      usedAmount: Math.abs(card.CURRENT_BALANCE), // Convert to positive for display
+      totalLimit: card.TOTAL_LIMIT || 0,
+      //currentRewardPoints: card.CURRENT_REWARD_POINTS || 0,
+      logo: "", // Add logo logic if needed
+    }));
   } catch (error) {
-    console.error("Error fetching credit cards from Notion:", error);
-    throw new Error("Failed to fetch credit cards from Notion.");
+    console.error("Error fetching credit cards from database:", error);
+    throw new Error("Failed to fetch credit cards from database.");
   }
 }
+
 export async function GET(request: NextRequest) {
   try {
-    if (!process.env.NOTION_API_KEY) 
-    {
-      return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
-    }
-    const creditCardDetails = await Promise.resolve(fetchCreditCardsFromNotion());
+    const creditCardDetails = await fetchCreditCardsFromDB();
     return NextResponse.json({
       creditCardDetails,
     });

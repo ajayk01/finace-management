@@ -1,27 +1,25 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { Client } from '@notionhq/client';
-import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
-
-// Initialize Notion client
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const NOTION_YEARLY_SUMMARY_DB_ID = process.env.NOTION_YEARLY_SUMMARY_DB_ID;
+import { query, TransactionType } from '@/lib/db';
 
 const months = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ];
 
-/**
- * Fetches pre-aggregated yearly summary data from a specific Notion database.
- */
-async function fetchYearlySummaryFromNotion(year: number) {
-    if (!NOTION_YEARLY_SUMMARY_DB_ID) {
-        throw new Error("NOTION_YEARLY_SUMMARY_DB_ID is not set in environment variables.");
-    }
+interface MonthlySummary {
+    month: string;
+    expense: number;
+    income: number;
+    investment: number;
+}
 
+/**
+ * Fetches yearly summary data from MySQL by aggregating transactions.
+ */
+async function fetchYearlySummaryFromDB(year: number): Promise<MonthlySummary[]> {
     // Initialize summary data with 0s for all months
-    const summaryData = months.map(monthName => ({
+    const summaryData: MonthlySummary[] = months.map(monthName => ({
         month: monthName,
         expense: 0,
         income: 0,
@@ -29,47 +27,61 @@ async function fetchYearlySummaryFromNotion(year: number) {
     }));
 
     try {
-        const results = await fetchAllPagesFromNotion(notion, NOTION_YEARLY_SUMMARY_DB_ID, {
-            filter: {
-                // Assuming 'Month - Year' is a Title property, e.g. "2024-05"
-                property: 'Month - Year',
-                title: {
-                    starts_with: `${year}-`,
-                },
-            },
-            sorts: [
-                {
-                    property: 'Month - Year',
-                    direction: 'ascending',
-                },
-            ],
-        });
+        // Calculate start and end timestamps for the year
+        const startDate = new Date(year, 0, 1).getTime(); // Jan 1
+        const endDate = new Date(year, 11, 31, 23, 59, 59, 999).getTime(); // Dec 31
 
-        // Map response to our summaryData structure
-        results.forEach((page: any) => {
-            const properties = page.properties;
-            const monthYearStr = properties['Month - Year']?.title?.[0]?.plain_text; // e.g., "2025-06"
-            if (!monthYearStr || !monthYearStr.includes('-')) return;
+        const sql = `
+            SELECT 
+                MONTH(FROM_UNIXTIME(DATE / 1000)) as MONTH_NUM,
+                TRANSCATION_TYPE,
+                SUM(AMOUNT) as TOTAL_AMOUNT
+            FROM Transactions
+            WHERE DATE >= ? AND DATE <= ?
+                AND TRANSCATION_TYPE IN (?, ?, ?)
+            GROUP BY MONTH_NUM, TRANSCATION_TYPE
+            ORDER BY MONTH_NUM
+        `;
 
-            const monthIndex = parseInt(monthYearStr.split('-')[1], 10) - 1;
+        const results = await query<{
+            MONTH_NUM: number;
+            TRANSCATION_TYPE: number;
+            TOTAL_AMOUNT: number;
+        }>(sql, [
+            startDate,
+            endDate,
+            TransactionType.EXPENSE,
+            TransactionType.INCOME,
+            TransactionType.INVESTMENT
+        ]);
 
+        console.log(`Fetched ${results.length} monthly aggregations for year ${year}`);
+
+        // Map results to summaryData
+        results.forEach((row: any) => {
+            const monthIndex = row.MONTH_NUM - 1; // Convert 1-12 to 0-11
             if (monthIndex >= 0 && monthIndex < 12) {
-                // Handle both Number and Formula properties for flexibility
-                const expense = properties['Expense']?.number ?? properties['Expense']?.formula?.number ?? 0;
-                const income = properties['Income']?.number ?? properties['Income']?.formula?.number ?? 0;
-                const investment = properties['Investments']?.number ?? properties['Investments']?.formula?.number ?? 0;
+                const amount = Number(row.TOTAL_AMOUNT) || 0;
                 
-                summaryData[monthIndex].expense = expense;
-                summaryData[monthIndex].income = income;
-                summaryData[monthIndex].investment = investment;
+                switch (row.TRANSCATION_TYPE) {
+                    case TransactionType.EXPENSE:
+                        summaryData[monthIndex].expense = amount;
+                        break;
+                    case TransactionType.INCOME:
+                        summaryData[monthIndex].income = amount;
+                        break;
+                    case TransactionType.INVESTMENT:
+                        summaryData[monthIndex].investment = amount;
+                        break;
+                }
             }
         });
-        
+
         return summaryData;
 
     } catch (error) {
-        console.error(`Error fetching yearly summary for ${year} from Notion:`, error);
-        // On error, return the initialized array of zeros to avoid breaking the frontend chart.
+        console.error(`Error fetching yearly summary for ${year} from database:`, error);
+        // On error, return the initialized array of zeros to avoid breaking the frontend chart
         return summaryData;
     }
 }
@@ -79,19 +91,17 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const yearParam = searchParams.get('year');
         
-        if (!process.env.NOTION_API_KEY) {
-          return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
-        }
         if (!yearParam) {
             return NextResponse.json({ error: "Year is a required query parameter." }, { status: 400 });
         }
+        
         const year = parseInt(yearParam, 10);
         
-        if (!process.env.NOTION_YEARLY_SUMMARY_DB_ID) {
-             return NextResponse.json({ error: "NOTION_YEARLY_SUMMARY_DB_ID is not configured in environment variables. Please add it to your .env file." }, { status: 500 });
+        if (isNaN(year) || year < 2000 || year > 2100) {
+            return NextResponse.json({ error: "Invalid year provided." }, { status: 400 });
         }
 
-        const summaryData = await fetchYearlySummaryFromNotion(year);
+        const summaryData = await fetchYearlySummaryFromDB(year);
 
         return NextResponse.json({
             summaryData,

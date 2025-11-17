@@ -2,11 +2,8 @@
 'use server';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Client } from '@notionhq/client';
 import { z } from 'zod';
-
-const notion = new Client({ auth: process.env.NOTION_API_WRITE });
-const INVESTMENT_TRANS_DB_ID = process.env.INVESTMENT_TRANS_DB_ID;
+import { query, TransactionType } from '@/lib/db';
 
 const addInvestmentSchema = z.object({
   amount: z.number(),
@@ -16,51 +13,49 @@ const addInvestmentSchema = z.object({
   investmentCategoryId: z.string(), // ID of the investment account it was paid into
 });
 
+async function createInvestmentTransaction(
+  amount: number,
+  date: string,
+  description: string,
+  accountId: string,
+  investmentCategoryId: string
+): Promise<number> {
+  const epochTime = new Date(date).getTime();
+  
+  const result = await query(
+    `INSERT INTO Transactions 
+     (AMOUNT, DATE, NOTES, FROM_ACCOUNT_ID, TO_ACCOUNT_ID, TRANSCATION_TYPE) 
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [amount, epochTime, description, parseInt(accountId), parseInt(investmentCategoryId), TransactionType.INVESTMENT]
+  );
+  
+  console.log('Investment transaction created with ID:', result.insertId);
+  return result.insertId as number;
+}
 
 export async function POST(request: NextRequest) {
-    if (!INVESTMENT_TRANS_DB_ID) {
-        return NextResponse.json({ error: 'Investment transaction database ID is not configured.' }, { status: 500 });
-    }
-    if (!process.env.NOTION_API_KEY) {
-        return NextResponse.json({ error: 'Notion API key is not configured.' }, { status: 500 });
-    }
-
     try {
         const body = await request.json();
         const parsedData = addInvestmentSchema.parse(body);
 
         const { amount, date, description, accountId, investmentCategoryId } = parsedData;
+        console.log('Adding investment with data:', parsedData);
+        const transactionId = await createInvestmentTransaction(
+            amount,
+            date,
+            description,
+            accountId,
+            investmentCategoryId
+        );
 
-        const properties: any = {
-            'Description': {
-                title: [{ text: { content: description } }]
-            },
-            'Invested Amount': {
-                number: amount
-            },
-            'Investment Date': {
-                date: { start: date }
-            },
-            'Bank Account': { // Relation to the source bank account
-                relation: [{ id: accountId }]
-            },
-            'Invested Account': { // Relation to the destination investment account
-                relation: [{ id: investmentCategoryId }]
-            },
-            "Type": {
-                select: {name: "Invest"}
-            }
-        };
-
-        await notion.pages.create({
-            parent: { database_id: INVESTMENT_TRANS_DB_ID },
-            properties: properties,
+        return NextResponse.json({ 
+            success: true, 
+            message: 'Investment added successfully.',
+            transactionId 
         });
 
-        return NextResponse.json({ success: true, message: 'Investment added to Notion.' });
-
     } catch (error) {
-        console.error('Error adding investment to Notion:', error);
+        console.error('Error adding investment:', error);
         if (error instanceof z.ZodError) {
              return NextResponse.json({ error: 'Invalid data provided.', details: error.errors }, { status: 400 });
         }

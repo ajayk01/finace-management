@@ -2,11 +2,8 @@
 'use server';
 
 import { NextResponse } from 'next/server';
-import { Client } from '@notionhq/client';
-import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
-
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const NOTION_FRIENDS_DB_ID = process.env.SPLITWISE_USERS_DB_ID;
+import { query } from '@/lib/db';
+import { SplitwiseFriend } from '@/types/database';
 
 // Cache configuration
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes in milliseconds
@@ -16,7 +13,7 @@ interface FriendBalance {
     name: string;
     splitwiseAmount: number | null;
     notionAmount: number | null;
-    pageId?: string;
+    friendId?: number;
 }
 
 // Helper to check if cache is valid
@@ -65,34 +62,31 @@ async function fetchSplitwiseWithCache(endpoint: string, apiKey: string) {
     }
 }
 
-// Helper to fetch friends from Notion
-async function fetchNotionFriends() {
-    if (!NOTION_FRIENDS_DB_ID) {
-        // Return empty array if the database ID is not configured, it's not a fatal error
-        console.warn("NOTION_FRIENDS_DB_ID is not configured. Notion friends data will be empty.");
-        return [];
-    }
+// Helper to fetch friends from database
+async function fetchFriendsFromDB() {
     try {
-        const results = await fetchAllPagesFromNotion(notion, NOTION_FRIENDS_DB_ID);
-        return results.map((page: any) => {
-            const name = page.properties?.Name?.title?.[0]?.plain_text || null;
-            const balance = page.properties?.["Total Owns"]?.formula?.number ?? null;
-            return { name, balance, pageId: page.id };
-        }).filter(friend => friend.name); // Only include friends with a name
+        const friends = await query<SplitwiseFriend>(
+            `SELECT ID, SPLITWISE_FRIEND_ID, NAME, TOTAL_OWNS
+             FROM SplitwiseFriends
+             ORDER BY NAME`
+        );
+        return friends.map((friend: SplitwiseFriend) => ({
+            name: friend.NAME,
+            balance: friend.TOTAL_OWNS,
+            friendId: friend.ID,
+            splitwiseFriendId: friend.SPLITWISE_FRIEND_ID
+        }));
     } catch (error) {
-        console.error("Error fetching friends from Notion:", error);
-        throw new Error("Failed to fetch friends data from Notion.");
+        console.error("Error fetching friends from database:", error);
+        throw new Error("Failed to fetch friends data from database.");
     }
 }
 
 export async function GET(request: Request) {
-    const { SPLITWISE_API_KEY, NOTION_API_KEY } = process.env;
+    const { SPLITWISE_API_KEY } = process.env;
 
     if (!SPLITWISE_API_KEY) {
         return NextResponse.json({ error: 'Splitwise API key is not configured.' }, { status: 500 });
-    }
-    if (!NOTION_API_KEY) {
-        return NextResponse.json({ error: 'Notion API key is not configured.' }, { status: 500 });
     }
 
     try {
@@ -103,9 +97,9 @@ export async function GET(request: Request) {
         if (forceRefresh) {
             clearCache();
         }
-        const [splitwiseData, notionFriends] = await Promise.all([
+        const [splitwiseData, dbFriends] = await Promise.all([
             fetchSplitwiseWithCache('get_friends', SPLITWISE_API_KEY),
-            fetchNotionFriends()
+            fetchFriendsFromDB()
         ]);
 
         const splitwiseFriends = splitwiseData.friends || [];
@@ -114,7 +108,7 @@ export async function GET(request: Request) {
         // Process Splitwise friends
         splitwiseFriends.forEach((friend: any) => {
             const name = `${friend.first_name} ${friend.last_name || ''}`.trim();
-            console.log("Processing Splitwise Friend: ", friend);
+            // console.log("Processing Splitwise Friend: ", friend);
             if (name && friend.balance?.[0]?.amount) 
             {
                 if (!mergedFriends[name]) 
@@ -126,32 +120,30 @@ export async function GET(request: Request) {
                 //'console.log("in loop :",mergedFriends);
             }   
         });
-        console.log("Splitwise Friends Processed: ", mergedFriends);
-        //console.log("splitwiseData ",splitwiseData, " notionFriends ", notionFriends);
-        // Process and merge Notion friends
-        notionFriends.forEach(friend => 
-        {
-            // console.log("Notion Friend: ", friend);
-            // console.log("Notion Friend name: ", friend.name);
+        // console.log("Splitwise Friends Processed: ", mergedFriends);
+        
+        // Process and merge database friends
+        dbFriends.forEach((friend: any) => {
             if (friend.name) {
-                //console.log("mergedFriend[]:",mergedFriends[friend.name]);
-                if (!mergedFriends[friend.name]) 
-                {
-                    mergedFriends[friend.name] = { name: friend.name, splitwiseAmount: null, notionAmount: null, pageId: friend.pageId };
-                } 
-                else 
-                {
-                    mergedFriends[friend.name].pageId = friend.pageId;
+                if (!mergedFriends[friend.name]) {
+                    mergedFriends[friend.name] = { 
+                        name: friend.name, 
+                        splitwiseAmount: null, 
+                        notionAmount: null, 
+                        friendId: friend.friendId 
+                    };
+                } else {
+                    mergedFriends[friend.name].friendId = friend.friendId;
                 }
                 mergedFriends[friend.name].notionAmount = friend.balance;
             }
         });
-        console.log("Merged Friends: ", mergedFriends);
+        // console.log("Merged Friends: ", mergedFriends);
         const friends = Object.values(mergedFriends)
           //.filter(f => f.splitwiseAmount !== null && f.notionAmount !== null) // Only show friends with entries in both systems
           .sort((a, b) => a.name.localeCompare(b.name));
 
-        console.log("Friends:", friends);
+        // console.log("Friends:", friends);
         return NextResponse.json({ friends });
 
     } catch (error) {

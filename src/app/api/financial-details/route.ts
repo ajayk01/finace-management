@@ -1,15 +1,8 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { Client } from '@notionhq/client';
-import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
-
-// Initialize Notion client
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const EXP_SUB_CATEGORY_DB_ID = process.env.EXP_SUB_CATEGORY_DB_ID;
-const INC_SUB_CATEGORY_DB_ID = process.env.INC_SUB_CATEGORY_DB_ID;
-const INVESTMENT_DB_ID = process.env.INVESTMENT_DB_ID;
-const EXPENSES_DB_ID = process.env.EXPENSE_DB_ID;
+import { query, TransactionType, CategoryType } from '@/lib/db';
+import type { Transaction, Category, SubCategory, Account } from '@/types/database';
 interface ExpenseItem 
 {
   year: number;
@@ -43,95 +36,51 @@ function formatDateToDDMMYYYY(date: Date): string {
     return `${year}-${month}-${day}`;
 }
 
-async function fetchGroupedMonthlyExpensesFromNotion({
+async function fetchGroupedMonthlyExpensesFromDB({
   month,
   year
 }: {
   month?: string;
   year?: string;
 }): Promise<ExpenseItem[]> {
-  if (!EXPENSES_DB_ID) {
-    throw new Error("EXPENSES_DB_ID is not set in environment variables.");
-  }
-
   try {
     const { startDate, endDate } = getFromToDates(String(month), Number(year));
-    const from = formatDateToDDMMYYYY(startDate);
-    const to = formatDateToDDMMYYYY(endDate);
-    const filters: any = {};
-    if (from || to) {
-      filters["and"] = [];
-      if (from) {
-        filters["and"].push({
-          property: "Date",
-          date: { on_or_after: from }
-        });
-      }
-      if (to) {
-        filters["and"].push({
-          property: "Date",
-          date: { on_or_before: to }
-        });
-      }
-    }
+    const fromTimestamp = startDate.getTime();
+    const toTimestamp = endDate.getTime();
 
-    const results = await fetchAllPagesFromNotion(notion, EXPENSES_DB_ID, {
-      ...(filters.and && { filter: filters })
-    });
+    // Query to fetch expense transactions with category and subcategory names
+    const sql = `
+      SELECT 
+        t.AMOUNT,
+        c.CATEGORY_NAME,
+        sc.SUB_CATEGORY_NAME
+      FROM Transactions t
+      LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
+      LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
+      WHERE t.TRANSCATION_TYPE = ?
+        AND t.DATE >= ?
+        AND t.DATE <= ?
+    `;
 
-    const items = await Promise.all(
-      results.map(async (page) => {
-        
-        
-        const prop = (page as any).properties;
-        const amount = Number(prop["Amount"]["number"])
+    const transactions = await query<{
+      AMOUNT: number;
+      CATEGORY_NAME: string;
+      SUB_CATEGORY_NAME: string;
+    }>(sql, [TransactionType.EXPENSE, fromTimestamp, toTimestamp]);
 
-        let subCategoryName = ""
-        let subCategoryId = prop["Sub Category"]["relation"]
-        if(subCategoryId && subCategoryId.length > 0)
-        {
-            const subCategoryPage = await notion.pages.retrieve({
-            page_id: subCategoryId[0]["id"]
-          });
-          subCategoryName = (subCategoryPage as any).properties["Sub Category"]["title"][0]["plain_text"]
-        }
-        
-        let categoryName = "";
-        let categoryId = prop["Category"]["relation"]
-        if(categoryId)
-        if (categoryId && categoryId.length > 0) {
-          const categoryPage = await notion.pages.retrieve({
-            page_id: categoryId[0]["id"]
-          });
-
-          categoryName = (categoryPage as any).properties["Category"]["title"][0]["plain_text"];
-        }
-        if(categoryName === "" && subCategoryName === "")
-        {
-          return null;
-        }
-        return {
-          category: categoryName,
-          subCategory: subCategoryName,
-          expense: amount
-        };
-      })
-    );
-
-    // Filter out nulls
-    const validItems = items.filter(Boolean) as {
-      category: string;
-      subCategory: string;
-      expense: number;
-    }[];
-
-    // Group and sum
+    // Group and sum by category and subcategory
     const groupedMap: Record<string, Record<string, number>> = {};
 
-    validItems.forEach(({ category, subCategory, expense }) => {
+    transactions.forEach(({ CATEGORY_NAME, SUB_CATEGORY_NAME, AMOUNT }: { CATEGORY_NAME: string; SUB_CATEGORY_NAME: string; AMOUNT: number }) => {
+      const category = CATEGORY_NAME || '';
+      const subCategory = SUB_CATEGORY_NAME || '';
+      
+      // Skip if both are empty
+      if (!category && !subCategory) return;
+
       if (!groupedMap[category]) groupedMap[category] = {};
       if (!groupedMap[category][subCategory]) groupedMap[category][subCategory] = 0;
-      groupedMap[category][subCategory] += expense;
+      groupedMap[category][subCategory] += AMOUNT;
     });
 
     // Convert to ExpenseItem[]
@@ -148,79 +97,134 @@ async function fetchGroupedMonthlyExpensesFromNotion({
 
     return groupedArray;
   } catch (error) {
-    console.error("Error fetching and grouping expenses from Notion:", error);
-    throw new Error("Failed to fetch grouped monthly expenses from Notion.");
+    console.error("Error fetching and grouping expenses from database:", error);
+    throw new Error("Failed to fetch grouped monthly expenses from database.");
   }
 }
 
-async function fetchMonthlyIncomesFromNotion(): Promise<ExpenseItem[]> {
-  if (!INC_SUB_CATEGORY_DB_ID) {
-    throw new Error("EXP_SUB_CATEGORY_DB_ID is not set in environment variables.");
-  }
+async function fetchMonthlyIncomesFromDB({
+  month,
+  year
+}: {
+  month?: string;
+  year?: string;
+}): Promise<ExpenseItem[]> {
   try {
-    const results = await fetchAllPagesFromNotion(notion, INC_SUB_CATEGORY_DB_ID);
+    const { startDate, endDate } = getFromToDates(String(month), Number(year));
+    const fromTimestamp = startDate.getTime();
+    const toTimestamp = endDate.getTime();
 
-      const items = await Promise.all(results.map(async (page) => {
-      const prop = (page as any).properties;
-      const expense = prop["Total Incomes"]["formula"]["number"];
-      if(expense == 0)
-      {
-        return null; 
-      }
-      const subCategoryName = prop["Sub Category"]["title"][0]["plain_text"];
-      let categoryName = "";
+    // Query to fetch income transactions with category and subcategory names
+    const sql = `
+      SELECT 
+        t.AMOUNT,
+        c.CATEGORY_NAME,
+        sc.SUB_CATEGORY_NAME
+      FROM Transactions t
+      LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
+      LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
+      WHERE t.TRANSCATION_TYPE = ?
+        AND t.DATE >= ?
+        AND t.DATE <= ?
+    `;
 
-      // Await the category page fetch
-      if (prop["Category"]?.relation?.[0]?.id) {
-        const categoryPage = await notion.pages.retrieve({ page_id: prop["Category"].relation[0].id });
-        categoryName = (categoryPage as any)["properties"]["Category"]["title"][0]["plain_text"];
-      }
+    const transactions = await query<{
+      AMOUNT: number;
+      CATEGORY_NAME: string;
+      SUB_CATEGORY_NAME: string;
+    }>(sql, [TransactionType.INCOME, fromTimestamp, toTimestamp]);
 
-      return {
-        year: 2025,
-        month: 'jun', // Or get from your data
-        category: categoryName,
-        subCategory: subCategoryName || "",
-        expense: `₹${expense}`,
-      };
-    }));
+    // Group and sum by category and subcategory
+    const groupedMap: Record<string, Record<string, number>> = {};
 
-    return items.filter(item => item !== null) as ExpenseItem[];
+    transactions.forEach(({ CATEGORY_NAME, SUB_CATEGORY_NAME, AMOUNT }: { CATEGORY_NAME: string; SUB_CATEGORY_NAME: string; AMOUNT: number }) => {
+      const category = CATEGORY_NAME || '';
+      const subCategory = SUB_CATEGORY_NAME || '';
+      
+      // Skip if both are empty or amount is 0
+      if ((!category && !subCategory) || AMOUNT === 0) return;
+
+      if (!groupedMap[category]) groupedMap[category] = {};
+      if (!groupedMap[category][subCategory]) groupedMap[category][subCategory] = 0;
+      groupedMap[category][subCategory] += AMOUNT;
+    });
+
+    // Convert to ExpenseItem[]
+    const incomeArray: ExpenseItem[] = Object.entries(groupedMap).flatMap(
+      ([category, subMap]) =>
+        Object.entries(subMap).map(([subCategory, total]) => ({
+          year: Number(year),
+          month: String(month),
+          category,
+          subCategory,
+          expense: `₹${total}`
+        }))
+    );
+
+    return incomeArray;
   } catch (error) {
-    console.error("Error fetching monthly income from Notion:", error);
-    throw new Error("Failed to fetch monthly income from Notion.");
+    console.error("Error fetching monthly income from database:", error);
+    throw new Error("Failed to fetch monthly income from database.");
   }
 }
 
-async function fetchMonthlyInvFromNotion(): Promise<ExpenseItem[]> {
-  if (!INVESTMENT_DB_ID) {
-    throw new Error("EXP_SUB_CATEGORY_DB_ID is not set in environment variables.");
-  }
+async function fetchMonthlyInvFromDB({
+  month,
+  year
+}: {
+  month?: string;
+  year?: string;
+}): Promise<ExpenseItem[]> {
   try {
-    const results = await fetchAllPagesFromNotion(notion, INVESTMENT_DB_ID);
+    const { startDate, endDate } = getFromToDates(String(month), Number(year));
+    const fromTimestamp = startDate.getTime();
+    const toTimestamp = endDate.getTime();
 
-      const items = await Promise.all(results.map(async (page) => {
-      const prop = (page as any).properties;
-      const expense = prop["This Month Investments"]["formula"]["number"];
-      if(expense == 0)
-      {
-        return null; 
-      }
-      //prop["Sub Category"]["title"][0]["plain_text"];
-      const categoryName = prop["Investment Account"]["title"][0]["plain_text"] || "";
-      return {
-        year: 2025,
-        month: 'jun', // Or get from your data
-        category: categoryName,
-        subCategory: "",
-        expense: `₹${expense}`,
-      };
-    }));
+    // Query to fetch investment transactions with account names
+    const sql = `
+      SELECT 
+        t.AMOUNT,
+        a.ACCOUNT_NAME
+      FROM Transactions t
+      LEFT JOIN Accounts a ON t.TO_ACCOUNT_ID = a.ID
+      WHERE t.TRANSCATION_TYPE = ?
+        AND t.DATE >= ?
+        AND t.DATE <= ?
+    `;
 
-    return items.filter(item => item !== null) as ExpenseItem[];
+    const transactions = await query<{
+      AMOUNT: number;
+      ACCOUNT_NAME: string;
+    }>(sql, [TransactionType.INVESTMENT, fromTimestamp, toTimestamp]);
+
+    // Group and sum by account name
+    const groupedMap: Record<string, number> = {};
+
+    transactions.forEach(({ ACCOUNT_NAME, AMOUNT }: { ACCOUNT_NAME: string; AMOUNT: number }) => {
+      const accountName = ACCOUNT_NAME || '';
+      
+      // Skip if amount is 0 or account name is empty
+      if (!accountName || AMOUNT === 0) return;
+
+      if (!groupedMap[accountName]) groupedMap[accountName] = 0;
+      groupedMap[accountName] += AMOUNT;
+    });
+
+    // Convert to ExpenseItem[]
+    const investmentArray: ExpenseItem[] = Object.entries(groupedMap).map(
+      ([accountName, total]) => ({
+        year: Number(year),
+        month: String(month),
+        category: accountName,
+        subCategory: '',
+        expense: `₹${total}`
+      })
+    );
+
+    return investmentArray;
   } catch (error) {
-    console.error("Error fetching monthly income from Notion:", error);
-    throw new Error("Failed to fetch monthly income from Notion.");
+    console.error("Error fetching monthly investments from database:", error);
+    throw new Error("Failed to fetch monthly investments from database.");
   }
 }
 
@@ -231,32 +235,23 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const month = searchParams.get("month");
     const year = searchParams.get("year");
-    if (!process.env.NOTION_API_KEY) {
-      return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
-    }
-    // Check for all required DB IDs
-    const requiredDbIds = [
-      { name: "EXP_SUB_CATEGORY_DB_ID", value: EXP_SUB_CATEGORY_DB_ID },
-      { name: "INC_SUB_CATEGORY_DB_ID", value: INC_SUB_CATEGORY_DB_ID },
-      { name: "INVESTMENT_DB_ID", value: INVESTMENT_DB_ID },
-    ];
 
-    for (const dbId of requiredDbIds) {
-      if (!dbId.value && dbId.name !== "EXP_SUB_CATEGORY_DB_ID") { // EXP_SUB_CATEGORY_DB_ID is an old name, check for new ones
-         // Allow specific DBs to be optional if desired by commenting out or conditional logic here
-        // For now, all are required
-        return NextResponse.json({ error: `${dbId.name} is not configured in environment variables.` }, { status: 500 });
-      }
+    // Validate month and year parameters
+    if (!month || !year) {
+      return NextResponse.json(
+        { error: "Month and year parameters are required." },
+        { status: 400 }
+      );
     }
-    
+
     const [
       monthlyExpenses,
       monthlyIncome,
       monthlyInvestments
     ] = await Promise.all([
-      fetchGroupedMonthlyExpensesFromNotion({ month: month ?? undefined, year: year ?? undefined }),
-      fetchMonthlyIncomesFromNotion(),
-      fetchMonthlyInvFromNotion(),
+      fetchGroupedMonthlyExpensesFromDB({ month, year }),
+      fetchMonthlyIncomesFromDB({ month, year }),
+      fetchMonthlyInvFromDB({ month, year }),
     ]);
 
     return NextResponse.json({

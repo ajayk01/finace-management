@@ -1,51 +1,45 @@
-
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { Client } from '@notionhq/client';
-import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
+import { query, AccountType } from '@/lib/db';
+import { Account } from '@/types/database';
 
-// Initialize Notion client
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const NOTION_BANK_ACCOUNTS_DB_ID = process.env.NOTION_BANK_ACCOUNTS_DB_ID;
-
-async function fetchBankAccountsFromNotion()
-{
-  if (!NOTION_BANK_ACCOUNTS_DB_ID) {
-    throw new Error("NOTION_BANK_ACCOUNTS_DB_ID is not set in environment variables.");
-  }
+async function fetchBankAccountsFromDB() {
   try {
-    const results = await fetchAllPagesFromNotion(notion, NOTION_BANK_ACCOUNTS_DB_ID);
-    return results.map((page) => {
-      // Adjust these property names if your Notion database uses different names
-      const accountNameProperty = (page as any).properties?.['Account']["title"][0]["plain_text"] // Assumes 'Account Name' is a Title property
-      const balanceProperty = (page as any).properties?.['Current Balance']["formula"] // Assumes 'Balance' is a Number property
-      const type = (page as any)['icon']['type']
-      const logo = (page as any)['icon'][type]["url"];
-      return {
-        id: (page as any).id,
-        name: accountNameProperty || "Unnamed Account",
-        balance: balanceProperty?.number || 0,
-        logo : logo || "",
-      };
-    });
+    const accounts = await query<Account>(
+      `SELECT ID, ACCOUNT_NAME, CURRENT_BALANCE, INITIAL_BALANCE, ACCOUNT_TYPE, IS_ACTIVE
+       FROM Accounts
+       WHERE ACCOUNT_TYPE = ? AND IS_ACTIVE = 1
+       ORDER BY ACCOUNT_NAME`,
+      [AccountType.BANK]
+    );
+    
+    return accounts.map((account: Account) => ({
+      id: account.ID.toString(),
+      name: account.ACCOUNT_NAME,
+      balance: account.CURRENT_BALANCE,
+      initialBalance: account.INITIAL_BALANCE,
+      logo: "", // Add logo logic if needed
+    }));
   } catch (error) {
-    console.error("Error fetching bank accounts from Notion:", error);
-    throw new Error("Failed to fetch bank accounts from Notion.");
+    console.error("Error fetching bank accounts from database:", error);
+    throw new Error("Failed to fetch bank accounts from database.");
   }
 }
 
 export async function GET(request: NextRequest) {
   try {
-    if (!process.env.NOTION_API_KEY) {
-      return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
-    }
-    const bankAccounts = await Promise.resolve(fetchBankAccountsFromNotion());
+    const bankAccounts = await fetchBankAccountsFromDB();
     return NextResponse.json({
       bankAccounts,
     });
   } catch (error) {
     console.error("Error in /api/bank-details:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while bank financial details.";
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while fetching bank details.";
+    const errorDetails = error instanceof Error ? error.stack : String(error);
+    return NextResponse.json({ 
+      error: errorMessage,
+      details: errorDetails,
+      message: "Check server console for full error"
+    }, { status: 500 });
   }
 }

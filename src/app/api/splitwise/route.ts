@@ -46,7 +46,7 @@ export async function GET() {
                 };
             })
         );
-        console.log('Fetched groups with members:', groupsWithMembers);
+        //console.log('Fetched groups with members:', groupsWithMembers);
         // Create a map with user ID vs name for all users across all groups
         const userIdToNameMap = new Map<string, string>();
 

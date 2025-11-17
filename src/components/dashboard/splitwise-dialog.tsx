@@ -35,7 +35,8 @@ export interface FriendBalance {
   name: string;
   splitwiseAmount: number | null;
   notionAmount: number | null;
-  pageId?: string;
+  pageId?: string; // Legacy Notion page ID (deprecated)
+  friendId?: number; // Database ID from SplitwiseFriends table
 }
 
 interface BankAccount {
@@ -87,7 +88,7 @@ export function SplitwiseDialog({
   const [settlingFriend, setSettlingFriend] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const handleSettleUp = async (friendName: string, friendPageId?: string) => {
+  const handleSettleUp = async (friendName: string, friendId?: number) => {
     if (!selectedBankAccount) {
       toast({
         title: 'Select Bank Account',
@@ -97,42 +98,26 @@ export function SplitwiseDialog({
       return;
     }
 
+    if (!friendId) {
+      toast({
+        title: 'Friend ID Missing',
+        description: 'Cannot settle up: Friend database ID is missing.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSettlingFriend(friendName);
     try {
-      // First fetch transactions for the friend - prefer pageId if available
-      const queryParam = friendPageId 
-        ? `friendPageId=${encodeURIComponent(friendPageId)}`
-        : `friendName=${encodeURIComponent(friendName)}`;
-      
-      const transactionsResponse = await fetch(`/api/friend-transactions?${queryParam}`);
-      if (!transactionsResponse.ok) {
-        throw new Error('Failed to fetch friend transactions');
-      }
-      const transactionsData = await transactionsResponse.json();
-      console.log("Fetched trans",transactionsData)
-      if (!transactionsData.transactions || transactionsData.transactions.length === 0) {
-        toast({
-          title: 'No Transactions Found',
-          description: `No transactions found for ${friendName}. Cannot settle up.`,
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      // Create settlement with all transactions
+      // Create settlement - API will fetch and process all unsettled transactions
       const settlementResponse = await fetch('/api/settle-up', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          friendName: friendName,
+          friendId: friendId,
           bankAccountId: selectedBankAccount,
-          transactions: transactionsData.transactions.map((t: any) => ({
-            id: t.id,
-            amount: t.amount,
-            splitwiseId: t.splitwiseId
-          })),
         }),
       });
 
@@ -262,8 +247,8 @@ export function SplitwiseDialog({
                           <Button
                             size="sm"
                             variant="default"
-                            onClick={() => handleSettleUp(friend.name, friend.pageId)}
-                            disabled={settlingFriend === friend.name}
+                            onClick={() => handleSettleUp(friend.name, friend.friendId)}
+                            disabled={settlingFriend === friend.name || !friend.friendId}
                             className="px-4 py-1 h-8 bg-blue-600 hover:bg-blue-700 text-white"
                           >
                             {settlingFriend === friend.name ? 'Settling...' : 'Settle Up'}

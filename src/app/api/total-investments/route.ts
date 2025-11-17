@@ -1,14 +1,8 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { Client } from '@notionhq/client';
-import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
-
-// Initialize Notion client
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const INVESTMENT_ACCOUNTS_DB_ID = process.env.INVESTMENT_DB_ID;
-
-const investmentAccountCache: Map<string, string> = new Map();
+import { query, TransactionType, AccountType } from '@/lib/db';
+import type { Account } from '@/types/database';
 
 // Interfaces for data structures
 interface Transaction {
@@ -21,83 +15,89 @@ interface Transaction {
     subCategory?: string;
 }
 
-interface ExpenseItem {
-  year: number;
-  month: string;
-  category: string;
-  subCategory: string;
-  expense: string;
+interface InvestmentAccount {
+  id: string;
+  name: string;
 }
 
-
-
-async function loadInvestmentAccountCache() {
-  if (!INVESTMENT_ACCOUNTS_DB_ID || investmentAccountCache.size > 0) return;
-  const results = await fetchAllPagesFromNotion(notion, INVESTMENT_ACCOUNTS_DB_ID);
-  results.forEach((page: any) => {
-    const id = page.id;
-    const name = page.properties["Investment Account"]?.title?.[0]?.plain_text;
-    if (id && name) investmentAccountCache.set(id, name);
-  });
-}
-
-
-async function fetchTotalInvestmentsFromNotion({}): Promise<Transaction[]> 
-{
-  if (!INVESTMENT_ACCOUNTS_DB_ID) {
-    throw new Error("INVESTMENT_ACCOUNTS_DB_ID is not set in environment variables.");
-  }
-
+async function fetchInvestmentAccountsFromDB(): Promise<InvestmentAccount[]> {
   try {
-    await loadInvestmentAccountCache();
-
-    const results = await fetchAllPagesFromNotion(notion, INVESTMENT_ACCOUNTS_DB_ID);
-
-    const items = await Promise.all(
-      results.map(async (page: any) => {
-        
-        const prop = (page as any).properties;
-        const amount = Number(prop["Total invested "]["formula"]["number"]) || 0;
-        if (amount === 0) return null;
-
-        const investmentAccountId = page.id;
-        const categoryName = investmentAccountId ? investmentAccountCache.get(investmentAccountId) : "Uncategorized";
-        return {
-          id: page.id,
-          amount,
-          type: 'Investment',
-          category: categoryName,
-          subCategory: '', // Investments don't have sub-categories in this model
-        } as Transaction;
-      })
-    );
-
-    return items.filter(Boolean) as Transaction[];
+    const sql = `
+      SELECT ID, ACCOUNT_NAME
+      FROM Accounts
+      WHERE ACCOUNT_TYPE = ?
+        AND IS_ACTIVE = 1
+      ORDER BY ACCOUNT_NAME
+    `;
+    
+    const accounts = await query<Account>(sql, [AccountType.INVESTMENT]);
+    
+    return accounts.map((acc: Account) => ({
+      id: acc.ID.toString(),
+      name: acc.ACCOUNT_NAME
+    }));
   } catch (error) {
-    console.error("Error fetching investments from Notion:", error);
-    throw new Error("Failed to fetch investments from Notion.");
+    console.error("Error fetching investment accounts from database:", error);
+    throw new Error("Failed to fetch investment accounts from database.");
+  }
+}
+
+async function fetchTotalInvestmentsFromDB(): Promise<Transaction[]> {
+  try {
+    const sql = `
+      SELECT 
+        a.ID as ACCOUNT_ID,
+        a.ACCOUNT_NAME,
+        SUM(t.AMOUNT) as TOTAL_INVESTED
+      FROM Accounts a
+      LEFT JOIN Transactions t ON t.TO_ACCOUNT_ID = a.ID 
+        AND t.TRANSCATION_TYPE = ?
+      WHERE a.ACCOUNT_TYPE = ?
+        AND a.IS_ACTIVE = 1
+      GROUP BY a.ID, a.ACCOUNT_NAME
+      HAVING SUM(t.AMOUNT) > 0
+      ORDER BY a.ACCOUNT_NAME
+    `;
+
+    const results = await query<{
+      ACCOUNT_ID: number;
+      ACCOUNT_NAME: string;
+      TOTAL_INVESTED: number;
+    }>(sql, [TransactionType.INVESTMENT, AccountType.INVESTMENT]);
+
+    console.log(`Fetched ${results.length} total investment accounts`);
+
+    return results.map((row: any) => ({
+      id: row.ACCOUNT_ID.toString(),
+      amount: Number(row.TOTAL_INVESTED) || 0,
+      type: 'Investment' as const,
+      category: row.ACCOUNT_NAME,
+      description: `Total invested in ${row.ACCOUNT_NAME}`,
+      subCategory: '',
+      date: null, // Total investments don't have a specific date
+    }));
+  } catch (error) {
+    console.error("Error fetching total investments from database:", error);
+    throw new Error("Failed to fetch total investments from database.");
   }
 }
 
 export async function GET(request: NextRequest) {
-try {
-    await loadInvestmentAccountCache();
-    
-    const rawTransactions = await fetchTotalInvestmentsFromNotion({});
-    rawTransactions.sort((a, b) => {
-        if (!a.date) return 1;
-        if (!b.date) return -1;
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
+  try {
+    const [rawTransactions, investmentAccounts] = await Promise.all([
+      fetchTotalInvestmentsFromDB(),
+      fetchInvestmentAccountsFromDB()
+    ]);
 
-    const investmentAccounts = Array.from(investmentAccountCache.entries()).map(([id, name]) => ({ id, name }));
+    // Sort by amount descending (highest investments first)
+    rawTransactions.sort((a: Transaction, b: Transaction) => b.amount - a.amount);
 
     return NextResponse.json({
       rawTransactions,
       investmentAccounts,
     });
   } catch (error) {
-    console.error("Error in /api/monthly-investment:", error);
+    console.error("Error in /api/total-investments:", error);
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while fetching investment details.";
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }

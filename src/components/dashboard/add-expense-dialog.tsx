@@ -676,7 +676,13 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
                     render={({ field }) => (
                         <FormItem>
                         <FormLabel>Paid From</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select 
+                            onValueChange={(value) => {
+                                field.onChange(value);
+                                console.log('Account selected:', value);
+                            }} 
+                            value={field.value}
+                        >
                             <FormControl>
                             <SelectTrigger>
                                 <SelectValue placeholder="Select a bank or credit card" />
@@ -698,7 +704,13 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
                     render={({ field }) => (
                         <FormItem>
                         <FormLabel>Expense Category</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select 
+                            onValueChange={(value) => {
+                                field.onChange(value);
+                                console.log('Category selected:', value);
+                            }} 
+                            value={field.value}
+                        >
                             <FormControl>
                             <SelectTrigger>
                                 <SelectValue placeholder="Select a category" />

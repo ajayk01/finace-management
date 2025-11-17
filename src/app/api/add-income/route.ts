@@ -2,11 +2,58 @@
 'use server';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Client } from '@notionhq/client';
 import { z } from 'zod';
+import { query, TransactionType } from '@/lib/db';
 
-const notion = new Client({ auth: process.env.NOTION_API_WRITE });
-const INCOME_DB_ID = process.env.INCOME_DB_ID;
+/**
+ * Create income transaction in database
+ */
+async function createIncomeTransaction({ 
+    amount, 
+    date, 
+    description, 
+    account, 
+    categoryId, 
+    subCategoryId 
+}: {
+    amount: number;
+    date: string;
+    description: string;
+    account: { id: string; type: 'Bank' | 'Credit Card' };
+    categoryId: string;
+    subCategoryId?: string;
+}): Promise<number> {
+    // Convert date string (YYYY-MM-DD) to epoch time (Unix timestamp in milliseconds, like Java System.currentTimeMillis())
+    const epochTime = new Date(date).getTime();
+    
+    const sql = `
+        INSERT INTO Transactions (
+            DATE, 
+            NOTES, 
+            AMOUNT, 
+            TO_ACCOUNT_ID, 
+            CATEGORY_ID, 
+            SUB_CATEGORY_ID, 
+            TRANSCATION_TYPE
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    const result: any = await query(sql, [
+        epochTime,
+        description,
+        amount,
+        parseInt(account.id),
+        parseInt(categoryId),
+        subCategoryId ? parseInt(subCategoryId) : null,
+        TransactionType.INCOME
+    ]);
+    
+    // Extract the inserted ID from the result
+    const insertedId = result?.insertId || result?.[0]?.insertId || 0;
+    
+    console.log(`✅ Created income transaction with ID: ${insertedId}, date: ${date} (epoch: ${epochTime})`);
+    return insertedId;
+}
 
 const addIncomeSchema = z.object({
   amount: z.number(),
@@ -22,62 +69,35 @@ const addIncomeSchema = z.object({
 
 
 export async function POST(request: NextRequest) {
-    if (!INCOME_DB_ID) {
-        return NextResponse.json({ error: 'Income database ID is not configured.' }, { status: 500 });
-    }
-    if (!process.env.NOTION_API_KEY) {
-        return NextResponse.json({ error: 'Notion API key is not configured.' }, { status: 500 });
-    }
-
     try {
         const body = await request.json();
         const parsedData = addIncomeSchema.parse(body);
 
         const { amount, date, description, account, categoryId, subCategoryId } = parsedData;
 
-        const properties: any = {
-            'Description': {
-                title: [{ text: { content: description } }]
-            },
-            'Amount': {
-                number: amount
-            },
-            'Date': {
-                date: { start: date }
-            },
-            'Category': {
-                relation: [{ id: categoryId }]
-            },
-        };
-        
-        // In Notion, both bank and credit card might be linked via the same 'Accounts' relation
-        if (account.type === 'Bank')
-        {
-            properties["Account Type"] = { select: { name: 'Bank Account' }};
-            properties["Accounts"] = { relation: [{ id: account.id }] };
-        }
-        else if(account.type === 'Credit Card') 
-        {
-            properties["Account Type"] = { select: { name: 'Credit Card' } };
-            properties["Credit Card Account"] = { relation: [{ id: account.id }] };
-        }
-
-        if (subCategoryId) {
-            properties['Sub Category'] = { relation: [{ id: subCategoryId }] };
-        }
-
-
-        await notion.pages.create({
-            parent: { database_id: INCOME_DB_ID },
-            properties: properties,
+        // Create income transaction in database
+        const transactionId = await createIncomeTransaction({
+            amount, 
+            date, 
+            description, 
+            account, 
+            categoryId, 
+            subCategoryId
         });
 
-        return NextResponse.json({ success: true, message: 'Income added to Notion.' });
+        return NextResponse.json({ 
+            success: true, 
+            message: 'Income added successfully.',
+            transactionId
+        });
 
     } catch (error) {
-        console.error('Error adding income to Notion:', error);
+        console.error('Error adding income:', error);
         if (error instanceof z.ZodError) {
              return NextResponse.json({ error: 'Invalid data provided.', details: error.errors }, { status: 400 });
+        }
+        if (error instanceof Error) {
+            return NextResponse.json({ error: error.message }, { status: 500 });
         }
         return NextResponse.json({ error: 'An internal server error occurred.' }, { status: 500 });
     }

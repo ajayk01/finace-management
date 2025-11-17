@@ -1,18 +1,8 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { Client } from '@notionhq/client';
-import { fetchAllPagesFromNotion } from '@/lib/notion-helpers';
-
-// Initialize Notion client
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const INCOME_DB_ID = process.env.INCOME_DB_ID;
-const INC_SUB_CATEGORY_DB_ID = process.env.INC_SUB_CATEGORY_DB_ID;
-const INC_CATEGORY_DB_ID = process.env.INC_CATEGORY_DB_ID;
-
-const categoryCache: Map<string, string> = new Map();
-const subCategoryCache: Map<string, string> = new Map();
-const subCategoryToCategoryMap: Map<string, string> = new Map(); // Maps subcategory ID to category ID
+import { query, TransactionType, CategoryType } from '@/lib/db';
+import type { Transaction as DBTransaction, Category as DBCategory, SubCategory as DBSubCategory } from '@/types/database';
 
 interface IncomeTransaction {
   id: string;
@@ -24,8 +14,7 @@ interface IncomeTransaction {
   subCategory?: string;
 }
 
-interface IncomeItem 
-{
+interface IncomeItem {
   year: number;
   month: string;
   category: string;
@@ -33,8 +22,18 @@ interface IncomeItem
   expense: string; // Using "expense" to match the generic table component prop
 }
 
-const monthMap: Record<string, number> = 
-{
+interface Category {
+  id: string;
+  name: string;
+}
+
+interface SubCategory {
+  id: string;
+  name: string;
+  categoryId: string;
+}
+
+const monthMap: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 };
@@ -54,101 +53,109 @@ function getFromToDates(month: string, year: number) {
 
 function formatDateToDDMMYYYY(date: Date): string {
     const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
+    const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
     return `${year}-${month}-${day}`;
 }
 
-async function loadCategoryCache() 
-{
-  if (!INC_CATEGORY_DB_ID || categoryCache.size > 0) return;
-  const results = await fetchAllPagesFromNotion(notion, INC_CATEGORY_DB_ID);
-  results.forEach((page: any) => 
-  {
-    const id = page.id;
-    const name = page.properties["Category"]?.title?.[0]?.plain_text;
-    if (id && name) categoryCache.set(id, name);
-  });
+async function fetchCategoriesFromDB(): Promise<Category[]> {
+  try {
+    const sql = `
+      SELECT ID, CATEGORY_NAME
+      FROM Category
+      WHERE CATEGORY_TYPE = ?
+      ORDER BY CATEGORY_NAME
+    `;
+    
+    const categories = await query<DBCategory>(sql, [CategoryType.INCOME]);
+    
+    return categories.map((cat: DBCategory) => ({
+      id: cat.ID.toString(),
+      name: cat.CATEGORY_NAME
+    }));
+  } catch (error) {
+    console.error("Error fetching categories from database:", error);
+    throw new Error("Failed to fetch categories from database.");
+  }
 }
 
-async function loadSubCategoryCache() 
-{
-  if (!INC_SUB_CATEGORY_DB_ID || subCategoryCache.size > 0) return;
-  const results = await fetchAllPagesFromNotion(notion, INC_SUB_CATEGORY_DB_ID);
-  results.forEach((page: any) => 
-  {
-    const id = page.id;
-    const name = page.properties["Sub Category"]?.title?.[0]?.plain_text;
-    const categoryId = page.properties["Category"]?.relation?.[0]?.id;
-    if (id && name) {
-        subCategoryCache.set(id, name);
-        if (categoryId) {
-            subCategoryToCategoryMap.set(id, categoryId);
-        }
-    }
-  });
+async function fetchSubCategoriesFromDB(): Promise<SubCategory[]> {
+  try {
+    const sql = `
+      SELECT sc.ID, sc.SUB_CATEGORY_NAME, sc.CATEGORY_ID
+      FROM SubCategory sc
+      JOIN Category c ON sc.CATEGORY_ID = c.ID
+      WHERE c.CATEGORY_TYPE = ?
+      ORDER BY sc.SUB_CATEGORY_NAME
+    `;
+    
+    const subCategories = await query<DBSubCategory>(sql, [CategoryType.INCOME]);
+    
+    return subCategories.map((sub: DBSubCategory) => ({
+      id: sub.ID.toString(),
+      name: sub.SUB_CATEGORY_NAME,
+      categoryId: sub.CATEGORY_ID.toString()
+    }));
+  } catch (error) {
+    console.error("Error fetching subcategories from database:", error);
+    throw new Error("Failed to fetch subcategories from database.");
+  }
 }
 
-async function fetchMonthlyIncomeFromNotion({
+async function fetchMonthlyIncomeFromDB({
   month,
   year
 }: {
   month?: string;
   year?: string;
 }): Promise<IncomeTransaction[]> {
-  if (!INCOME_DB_ID) {
-    throw new Error("INCOME_DB_ID is not set in environment variables.");
-  }
-
   try {
     const { startDate, endDate } = getFromToDates(String(month), Number(year));
-    const from = formatDateToDDMMYYYY(startDate);
-    const to = formatDateToDDMMYYYY(endDate);
-    const filters: any = { and: [] };
-      filters.and.push({
-        property: "Date",
-        date: { on_or_after: from }
-      });
-      filters.and.push({
-        property: "Date",
-        date: { on_or_before: to }
-      });
+    const fromTimestamp = startDate.getTime();
+    const toTimestamp = endDate.getTime();
 
-    await Promise.all([loadCategoryCache(), loadSubCategoryCache()]);
+    const sql = `
+      SELECT 
+        t.ID,
+        t.DATE,
+        t.AMOUNT,
+        t.NOTES,
+        c.CATEGORY_NAME,
+        sc.SUB_CATEGORY_NAME
+      FROM Transactions t
+      LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
+      LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
+      WHERE t.TRANSCATION_TYPE = ?
+        AND t.DATE >= ?
+        AND t.DATE <= ?
+      ORDER BY t.DATE DESC
+    `;
 
-    const results = await fetchAllPagesFromNotion(notion, INCOME_DB_ID, { filter: filters });
+    const transactions = await query<{
+      ID: number;
+      DATE: number;
+      AMOUNT: number;
+      NOTES: string;
+      CATEGORY_NAME: string;
+      SUB_CATEGORY_NAME: string;
+    }>(sql, [TransactionType.INCOME, fromTimestamp, toTimestamp]);
 
-    const items = await Promise.all(
-      results.map(async (page:any) => {
-        const prop = page.properties;
-        const amount = Number(prop["Amount"]?.number);
-        if (amount === 0) return null;
-        
-        const description = prop['Description']?.title?.[0]?.plain_text || 'No Description';
-        const date = prop['Date']?.date?.start || null;
-        
-        const categoryId = prop["Category"]?.relation?.[0]?.id;
-        const subCategoryId = prop["Sub Category"]?.relation?.[0]?.id;
-        
-        const categoryName = categoryId ? categoryCache.get(categoryId) : "Uncategorized";
-        const subCategoryName = subCategoryId ? subCategoryCache.get(subCategoryId) : "";
+    console.log(`Fetched ${transactions.length} income transactions`);
 
-        return {
-          id: page.id,
-          date,
-          description,
-          amount,
-          type: 'Income',
-          category: categoryName,
-          subCategory: subCategoryName,
-        } as IncomeTransaction;
-      })
-    );
-
-    return items.filter(Boolean) as IncomeTransaction[];
+    return transactions
+      .filter((tx: any) => tx.AMOUNT !== 0)
+      .map((tx: any) => ({
+        id: tx.ID.toString(),
+        date: new Date(tx.DATE).toISOString().split('T')[0],
+        description: tx.NOTES || 'No Description',
+        amount: tx.AMOUNT,
+        type: 'Income' as const,
+        category: tx.CATEGORY_NAME || 'Uncategorized',
+        subCategory: tx.SUB_CATEGORY_NAME || ''
+      }));
   } catch (error) {
-    console.error("Error fetching income from Notion:", error);
-    throw new Error("Failed to fetch income from Notion.");
+    console.error("Error fetching income from database:", error);
+    throw new Error("Failed to fetch income from database.");
   }
 }
 
@@ -182,28 +189,23 @@ export async function GET(request: NextRequest) {
     const month = searchParams.get("month");
     const year = searchParams.get("year");
 
-    if (!process.env.NOTION_API_KEY) {
-      return NextResponse.json({ error: "Notion API key is not configured." }, { status: 500 });
-    }
-     if (!month || !year) {
-        return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
+    if (!month || !year) {
+      return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
     }
 
-    await Promise.all([loadCategoryCache(), loadSubCategoryCache()]);
-    
-    const rawTransactions = await fetchMonthlyIncomeFromNotion({ month, year });
+    const [rawTransactions, categories, subCategories] = await Promise.all([
+      fetchMonthlyIncomeFromDB({ month, year }),
+      fetchCategoriesFromDB(),
+      fetchSubCategoriesFromDB()
+    ]);
+
     const monthlyIncome = groupTransactions(rawTransactions, month, Number(year));
     
+    // Sort transactions by date (already sorted DESC in query, but keeping for consistency)
     rawTransactions.sort((a, b) => {
-        if (!a.date) return 1;
-        if (!b.date) return -1;
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
-
-    const categories = Array.from(categoryCache.entries()).map(([id, name]) => ({ id, name }));
-    const subCategories = Array.from(subCategoryCache.entries()).map(([id, name]) => {
-      const categoryId = subCategoryToCategoryMap.get(id) || '';
-      return { id, name, categoryId };
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
     });
 
     return NextResponse.json({
