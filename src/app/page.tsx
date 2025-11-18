@@ -129,6 +129,7 @@ export default function DashboardPage() {
   
   // Expenses State
   const [rawMonthlyExpenses, setRawMonthlyExpenses] = useState<Transaction[]>([]);
+  const [monthlyExpenses, setMonthlyExpenses] = useState<ExpenseItem[]>([]);
   const [isExpensesLoading, setIsExpensesLoading] = useState<boolean>(true);
   const [expensesError, setExpensesError] = useState<string | null>(null);
   const [selectedExpenseMonth, setSelectedExpenseMonth] = useState<string>(currentMonthValue);
@@ -136,6 +137,7 @@ export default function DashboardPage() {
   const [excludedExpenseIds, setExcludedExpenseIds] = useState<Set<string>>(new Set());
   const [expenseCategories, setExpenseCategories] = useState<Category[]>([]);
   const [expenseSubCategories, setExpenseSubCategories] = useState<SubCategory[]>([]);
+  const [includeSplitwise, setIncludeSplitwise] = useState<boolean>(true);
 
   // Income State
   const [rawMonthlyIncome, setRawMonthlyIncome] = useState<Transaction[]>([]);
@@ -282,6 +284,7 @@ export default function DashboardPage() {
     const cacheKey = `expenses-${year}-${month}`;
     if (dataCache.current[cacheKey]) {
         setRawMonthlyExpenses(dataCache.current[cacheKey].rawTransactions);
+        setMonthlyExpenses(dataCache.current[cacheKey].monthlyExpenses);
         setExpenseCategories(dataCache.current[cacheKey].categories);
         setExpenseSubCategories(dataCache.current[cacheKey].subCategories);
         setIsExpensesLoading(false);
@@ -293,13 +296,15 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
       const data = await res.json();
       const rawTransactions = data.rawTransactions || [];
+      const monthlyExpensesData = data.monthlyExpenses || [];
       const categories = data.categories || [];
       const subCategories = data.subCategories || [];
       setExpenseCategories(categories);
       setExpenseSubCategories(subCategories);
       setRawMonthlyExpenses(rawTransactions);
+      setMonthlyExpenses(monthlyExpensesData);
       setExcludedExpenseIds(new Set()); // Reset on month change
-      dataCache.current[cacheKey] = { rawTransactions, categories, subCategories };
+      dataCache.current[cacheKey] = { rawTransactions, monthlyExpenses: monthlyExpensesData, categories, subCategories };
     } catch (error) {
       setExpensesError(error instanceof Error ? error.message : "An unknown error occurred");
     } finally {
@@ -666,10 +671,14 @@ export default function DashboardPage() {
   }, [expenseCategories, expenseSubCategories]);
 
   const apiMonthlyExpenses = useMemo(() => {
-    if (!rawMonthlyExpenses) return [];
-    const filteredTransactions = rawMonthlyExpenses.filter(tx => !excludedExpenseIds.has(tx.id));
-    return groupTransactions(filteredTransactions, selectedExpenseMonth, selectedExpenseYear);
-  }, [rawMonthlyExpenses, excludedExpenseIds, selectedExpenseMonth, selectedExpenseYear]);
+    // Use server-calculated monthlyExpenses (includes splitwise adjustments)
+    // Only recalculate if user has excluded specific transactions
+    if (excludedExpenseIds.size > 0) {
+      const filteredTransactions = rawMonthlyExpenses.filter(tx => !excludedExpenseIds.has(tx.id));
+      return groupTransactions(filteredTransactions, selectedExpenseMonth, selectedExpenseYear);
+    }
+    return monthlyExpenses;
+  }, [monthlyExpenses, rawMonthlyExpenses, excludedExpenseIds, selectedExpenseMonth, selectedExpenseYear]);
   
   const apiMonthlyIncome = useMemo(() => {
     if (!rawMonthlyIncome) return [];
@@ -968,6 +977,8 @@ export default function DashboardPage() {
           setTransactionCategoryFilter(value);
           setTransactionPage(1); // Reset page when filter changes
         }}
+        includeSplitwise={includeSplitwise}
+        onIncludeSplitwiseChange={setIncludeSplitwise}
       />
       <InvestmentCalculatorDialog 
         open={isInvestmentCalculatorOpen}

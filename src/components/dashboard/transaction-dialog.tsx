@@ -24,6 +24,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import type { Category } from "./add-expense-dialog";
 
 interface Transaction {
@@ -53,6 +55,8 @@ interface TransactionDialogProps {
   categories?: Category[];
   categoryFilter?: string;
   onCategoryFilterChange?: (value: string) => void;
+  includeSplitwise?: boolean;
+  onIncludeSplitwiseChange?: (value: boolean) => void;
 }
 
 const formatDate = (dateString: string | null) => {
@@ -93,7 +97,9 @@ export function TransactionDialog({
   onClearExclusions,
   categories,
   categoryFilter,
-  onCategoryFilterChange
+  onCategoryFilterChange,
+  includeSplitwise,
+  onIncludeSplitwiseChange
 }: TransactionDialogProps) {
 
   const isMonthlySummary = React.useMemo(() =>
@@ -103,6 +109,15 @@ export function TransactionDialog({
   
   const showCategoryFilter = isExcludable && categories && categories.length > 0 && categoryFilter !== undefined && onCategoryFilterChange;
 
+  // Filter transactions based on includeSplitwise toggle
+  const filteredTransactions = React.useMemo(() => {
+    if (includeSplitwise === false) {
+      // Filter out splitwise transactions (those with IDs starting with "splitwise-")
+      return transactions.filter(tx => !tx.id.startsWith('splitwise-'));
+    }
+    return transactions;
+  }, [transactions, includeSplitwise]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[1200px] h-[90vh] flex flex-col">
@@ -110,6 +125,18 @@ export function TransactionDialog({
           <div className="flex items-center justify-between pr-8">
             <DialogTitle>{title || "Transactions"}</DialogTitle>
             <div className="flex items-center gap-2">
+                {onIncludeSplitwiseChange !== undefined && (
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="include-splitwise"
+                      checked={includeSplitwise}
+                      onCheckedChange={onIncludeSplitwiseChange}
+                    />
+                    <Label htmlFor="include-splitwise" className="text-sm cursor-pointer">
+                      Include Splitwise
+                    </Label>
+                  </div>
+                )}
                 {showCategoryFilter && (
                    <Select value={categoryFilter} onValueChange={onCategoryFilterChange}>
                      <SelectTrigger className="w-[180px]">
@@ -151,12 +178,12 @@ export function TransactionDialog({
                   </div>
                 ))}
               </div>
-            ) : error && transactions.length === 0 ? (
+            ) : error && filteredTransactions.length === 0 ? (
               <div className="text-red-600 flex items-center justify-center p-4 bg-red-50 rounded-md my-4">
                 <AlertCircle className="h-5 w-5 mr-2" />
                 Error loading transactions: {error}
               </div>
-            ) : transactions.length > 0 ? (
+            ) : filteredTransactions.length > 0 ? (
               <>
                 <Table>
                   <TableHeader>
@@ -176,7 +203,7 @@ export function TransactionDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transactions.map((tx) => (
+                    {filteredTransactions.map((tx) => (
                       <TableRow key={tx.id} data-state={excludedIds?.has(tx.id) ? 'selected' : undefined}>
                         {isExcludable && (
                           <TableCell className="text-center">
@@ -235,7 +262,7 @@ export function TransactionDialog({
                     Load More
                   </Button>
                 ) : (
-                  transactions.length > 0 && <p className="text-sm text-muted-foreground">No more transactions to load.</p>
+                  filteredTransactions.length > 0 && <p className="text-sm text-muted-foreground">No more transactions to load.</p>
                 )}
               </div>
             )}

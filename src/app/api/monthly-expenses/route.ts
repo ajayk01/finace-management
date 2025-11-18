@@ -158,12 +158,179 @@ async function fetchMonthlyExpensesFromDB({
   }
 }
 
-function groupTransactions(transactions: Transaction[], month: string, year: number): ExpenseItem[] {
+async function fetchSplitwiseAdjustmentsFromDB({
+  month,
+  year
+}: {
+  month?: string;
+  year?: string;
+}): Promise<{ category: string; subCategory: string; amount: number }[]> {
+  try {
+    const { startDate, endDate } = getFromToDates(String(month), Number(year));
+    const fromTimestamp = startDate.getTime();
+    const toTimestamp = endDate.getTime();
+    console.log("Fetching splitwise adjustments from "+fromTimestamp+ 
+    " to "+toTimestamp);
+    const sql = `
+      SELECT 
+        st.SPLITED_AMOUNT,
+        c.CATEGORY_NAME,
+        sc.SUB_CATEGORY_NAME
+      FROM SplitwiseTransactions st
+      INNER JOIN Transactions t ON st.TRANSACTION_ID = t.ID
+      LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
+      LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
+      WHERE st.TRANSACTION_ID IS NOT NULL
+        AND t.DATE >= ?
+        AND t.DATE <= ?
+    `;
+
+    const adjustments = await query<{
+      SPLITED_AMOUNT: number;
+      CATEGORY_NAME: string;
+      SUB_CATEGORY_NAME: string;
+    }>(sql, [fromTimestamp, toTimestamp]);
+
+    console.log(`Fetched ${adjustments.length} splitwise adjustments`);
+
+    return adjustments.map((adj: any) => ({
+      category: adj.CATEGORY_NAME || '',
+      subCategory: adj.SUB_CATEGORY_NAME || '',
+      amount: Number(adj.SPLITED_AMOUNT)
+    }));
+  } catch (error) {
+    console.error("Error fetching splitwise adjustments from database:", error);
+    throw new Error("Failed to fetch splitwise adjustments from database.");
+  }
+}
+
+async function fetchUnsettledSplitwiseTransactionsFromDB({
+  month,
+  year
+}: {
+  month?: string;
+  year?: string;
+}): Promise<Transaction[]> {
+  try {
+    const { startDate, endDate } = getFromToDates(String(month), Number(year));
+    const fromTimestamp = startDate.getTime();
+    const toTimestamp = endDate.getTime();
+
+    const sql = `
+      SELECT 
+        st.SPLITWISE_TRANSACTION_ID as ID,
+        t.DATE,
+        st.SPLITED_AMOUNT as AMOUNT,
+        t.NOTES,
+        c.CATEGORY_NAME,
+        sc.SUB_CATEGORY_NAME,
+        sf.NAME as FRIEND_NAME
+      FROM SplitwiseTransactions st
+      INNER JOIN Transactions t ON st.TRANSACTION_ID = t.ID
+      INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
+      LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
+      LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
+      WHERE st.TRANSACTION_ID IS NOT NULL
+        AND t.DATE >= ?
+        AND t.DATE <= ?
+      ORDER BY t.DATE DESC
+    `;
+
+    const transactions = await query<{
+      ID: string;
+      DATE: number;
+      AMOUNT: number;
+      NOTES: string;
+      CATEGORY_NAME: string;
+      SUB_CATEGORY_NAME: string;
+      FRIEND_NAME: string;
+    }>(sql, [fromTimestamp, toTimestamp]);
+
+    console.log(`Fetched ${transactions.length} unsettled splitwise transactions`);
+
+    return transactions.map((tx: any, index: number) => ({
+      id: `splitwise-${tx.ID}-${index}`,
+      date: new Date(tx.DATE).toISOString().split('T')[0],
+      description: `${tx.NOTES || 'Splitwise expense'} (Split with ${tx.FRIEND_NAME} - Not Settled)`,
+      amount: Number(tx.AMOUNT),
+      type: 'Expense' as const,
+      category: tx.CATEGORY_NAME || '',
+      subCategory: tx.SUB_CATEGORY_NAME || ''
+    }));
+  } catch (error) {
+    console.error("Error fetching unsettled splitwise transactions from database:", error);
+    throw new Error("Failed to fetch unsettled splitwise transactions from database.");
+  }
+}
+
+async function fetchPendingSplitwiseExpensesFromDB({
+  month,
+  year
+}: {
+  month?: string;
+  year?: string;
+}): Promise<{ category: string; subCategory: string; amount: number }[]> {
+  try {
+    const sql = `
+      SELECT 
+        st.SPLITED_AMOUNT,
+        sf.NAME as FRIEND_NAME
+      FROM SplitwiseTransactions st
+      INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
+      WHERE st.TRANSACTION_ID IS NULL
+    `;
+
+    const pendingExpenses = await query<{
+      SPLITED_AMOUNT: number;
+      FRIEND_NAME: string;
+    }>(sql, []);
+
+    console.log(`Fetched ${pendingExpenses.length} pending splitwise expenses (TRANSACTION_ID is NULL)`);
+
+    // Group by friend and return as "From Splitwise" category
+    return pendingExpenses.map((exp: any) => ({
+      category: 'From Splitwise',
+      subCategory: exp.FRIEND_NAME,
+      amount: Number(exp.SPLITED_AMOUNT)
+    }));
+  } catch (error) {
+    console.error("Error fetching pending splitwise expenses from database:", error);
+    throw new Error("Failed to fetch pending splitwise expenses from database.");
+  }
+}
+
+function groupTransactions(
+  transactions: Transaction[], 
+  splitwiseAdjustments: { category: string; subCategory: string; amount: number }[],
+  pendingSplitwiseExpenses: { category: string; subCategory: string; amount: number }[],
+  month: string, 
+  year: number
+): ExpenseItem[] {
     const groupedMap: Record<string, Record<string, number>> = {};
 
+    // Add regular transactions
     transactions.forEach(({ category, subCategory, amount }) => {
       const cat = category || 'Uncategorized';
       const sub = subCategory || 'Uncategorized';
+      if (!groupedMap[cat]) groupedMap[cat] = {};
+      if (!groupedMap[cat][sub]) groupedMap[cat][sub] = 0;
+      groupedMap[cat][sub] += amount;
+    });
+    console.log('Grouped Map after adding transactions:', JSON.stringify(groupedMap, null, 2));
+    
+    // Subtract splitwise adjustments (settled transactions)
+    splitwiseAdjustments.forEach(({ category, subCategory, amount }) => {
+      const cat = category || 'Uncategorized';
+      const sub = subCategory || 'Uncategorized';
+      if (!groupedMap[cat]) groupedMap[cat] = {};
+      if (!groupedMap[cat][sub]) groupedMap[cat][sub] = 0;
+      groupedMap[cat][sub] -= amount;
+    });
+    
+    // Add pending splitwise expenses (TRANSACTION_ID is NULL)
+    pendingSplitwiseExpenses.forEach(({ category, subCategory, amount }) => {
+      const cat = category || 'From Splitwise';
+      const sub = subCategory || 'Pending';
       if (!groupedMap[cat]) groupedMap[cat] = {};
       if (!groupedMap[cat][sub]) groupedMap[cat][sub] = 0;
       groupedMap[cat][sub] += amount;
@@ -182,15 +349,16 @@ function groupTransactions(transactions: Transaction[], month: string, year: num
     // Convert to ExpenseItem[]
     const groupedArray: ExpenseItem[] = Object.entries(groupedMap).flatMap(
       ([category, subMap]) =>
-        Object.entries(subMap).map(([subCategory, total]) => ({
-          year: Number(year),
-          month: String(month),
-          category,
-          subCategory,
-          expense: `₹${total}`
-        }))
+        Object.entries(subMap)
+          .filter(([_, total]) => total !== 0) // Filter out zero amounts
+          .map(([subCategory, total]) => ({
+            year: Number(year),
+            month: String(month),
+            category,
+            subCategory,
+            expense: `₹${total.toFixed(2)}`
+          }))
     );
-
     return groupedArray;
 }
 
@@ -204,16 +372,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
     }
     
-    const [rawTransactions, categories, subCategories] = await Promise.all([
+    const [rawTransactions, unsettledSplitwiseTransactions, splitwiseAdjustments, pendingSplitwiseExpenses, categories, subCategories] = await Promise.all([
       fetchMonthlyExpensesFromDB({ month, year }),
+      fetchUnsettledSplitwiseTransactionsFromDB({ month, year }),
+      fetchSplitwiseAdjustmentsFromDB({ month, year }),
+      fetchPendingSplitwiseExpensesFromDB({ month, year }),
       fetchCategoriesFromDB(),
       fetchSubCategoriesFromDB()
     ]);
 
-    const monthlyExpenses = groupTransactions(rawTransactions, month, Number(year));
+    // Combine regular transactions with unsettled splitwise transactions
+    const allRawTransactions = [...rawTransactions, ...unsettledSplitwiseTransactions];
 
-    // Sort transactions by date (already sorted DESC in query, but keeping for consistency)
-    rawTransactions.sort((a, b) => {
+    const monthlyExpenses = groupTransactions(rawTransactions, splitwiseAdjustments, pendingSplitwiseExpenses, month, Number(year));
+
+    // Sort all transactions by date (already sorted DESC in query, but keeping for consistency)
+    allRawTransactions.sort((a, b) => {
       if (!a.date) return 1;
       if (!b.date) return -1;
       return new Date(b.date).getTime() - new Date(a.date).getTime();
@@ -221,7 +395,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       monthlyExpenses,
-      rawTransactions,
+      rawTransactions: allRawTransactions,
       categories,
       subCategories
     });
