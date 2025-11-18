@@ -532,6 +532,30 @@ export default function DashboardPage() {
     await fetchFriendsBalance(true); // Force refresh
   }, [fetchFriendsBalance]);
 
+  const handleSyncSplitwise = useCallback(async () => {
+    try {
+      const response = await fetch('/api/splitwise-sync');
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to sync Splitwise data');
+      }
+
+      const data = await response.json();
+      console.log('Splitwise sync result:', data);
+      
+      // After successful sync, refresh the friends balance data
+      await fetchFriendsBalance(true);
+      
+      // You can show a success message here if needed
+      alert(`Successfully synced ${data.notificationsCount} notification(s) from Splitwise.`);
+      
+    } catch (error) {
+      console.error('Error syncing Splitwise:', error);
+      alert('Failed to sync Splitwise data. Please try again.');
+    }
+  }, [fetchFriendsBalance]);
+
   const handleViewBankTransactions = async (account: BankAccount) => {
     setTransactionDialogTitle(`All Transactions for ${account.name}`);
     setSelectedAccountId(account.id);
@@ -620,6 +644,26 @@ export default function DashboardPage() {
   };
 
   // --- Memoized Data Transformations ---
+
+  // Build full expense categories with nested subcategories from existing data
+  // Using the same expenseCategories and expenseSubCategories from AddExpenseDialog
+  const fullExpenseCategories = useMemo(() => {
+    if (!expenseCategories || expenseCategories.length === 0) return [];
+    
+    return expenseCategories.map(cat => ({
+      id: cat.id,
+      name: cat.name,
+      type: 1, // Expense type
+      budget: 0,
+      subcategories: expenseSubCategories
+        .filter(sub => sub.categoryId === cat.id)
+        .map(sub => ({
+          id: sub.id,
+          name: sub.name,
+          budget: 0
+        }))
+    }));
+  }, [expenseCategories, expenseSubCategories]);
 
   const apiMonthlyExpenses = useMemo(() => {
     if (!rawMonthlyExpenses) return [];
@@ -938,10 +982,12 @@ export default function DashboardPage() {
         isLoading={isFriendsBalanceLoading}
         error={friendsBalanceError}
         onRefresh={handleRefreshSplitwiseData}
+        onSync={handleSyncSplitwise}
         bankAccounts={apiBankAccounts.map(account => ({
           id: account.id,
           name: account.name,
         }))}
+        categories={fullExpenseCategories}
       />
     </div>
   );

@@ -10,10 +10,13 @@ import type { SplitwiseTransaction } from '@/types/database';
 async function fetchFriendTransactionsFromDB(friendId: string): Promise<any[]> {
   const sql = `
     SELECT 
-      st.*,
+      st.SPLITWISE_TRANSACTION_ID,
+      st.TRANSACTION_ID,
+      st.SPLITED_AMOUNT,
+      st.FRIEND_ID,
       t.DATE,
       t.NOTES as DESCRIPTION,
-      t.AMOUNT,
+      t.AMOUNT as TOTAL_AMOUNT,
       c.CATEGORY_NAME,
       sc.SUB_CATEGORY_NAME,
       t.FROM_ACCOUNT_ID as ACCOUNT_ID
@@ -29,11 +32,12 @@ async function fetchFriendTransactionsFromDB(friendId: string): Promise<any[]> {
   console.log(`Fetched ${transactions.length} transactions for friend ${friendId}`);
   
   return transactions.map((tx: any) => ({
-    id: tx.TRANSCATION_ID,
-    splitwiseId: tx.ID,
+    id: tx.TRANSACTION_ID,
+    splitwiseId: tx.SPLITWISE_TRANSACTION_ID,
     date: tx.DATE ? new Date(tx.DATE).toISOString().split('T')[0] : null,
     description: tx.DESCRIPTION || '',
-    amount: tx.AMOUNT || 0,
+    amount: tx.SPLITED_AMOUNT || 0,
+    totalAmount: tx.TOTAL_AMOUNT || 0,
     category: tx.CATEGORY_NAME || '',
     subCategory: tx.SUB_CATEGORY_NAME || '',
     accountId: tx.ACCOUNT_ID || null,

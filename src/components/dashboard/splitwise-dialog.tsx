@@ -26,10 +26,11 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowDown, ArrowUp, RefreshCw } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, RefreshCw, RefreshCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "../ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
+import { SettleUpDialog } from "./settle-up-dialog";
 
 export interface FriendBalance {
   name: string;
@@ -44,6 +45,20 @@ interface BankAccount {
   name: string;
 }
 
+interface Category {
+  id: string | number;
+  name: string;
+  budget: number;
+  type: number;
+  subcategories?: SubCategory[];
+}
+
+interface SubCategory {
+  id: string | number;
+  name: string;
+  budget: number;
+}
+
 interface SplitwiseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -51,7 +66,9 @@ interface SplitwiseDialogProps {
   isLoading: boolean;
   error: string | null;
   onRefresh?: () => void;
+  onSync?: () => void;
   bankAccounts: BankAccount[];
+  categories: Category[];
 }
 
 const formatCurrency = (amount: number | null) => {
@@ -82,22 +99,27 @@ export function SplitwiseDialog({
   isLoading,
   error,
   onRefresh,
-  bankAccounts
+  onSync,
+  bankAccounts,
+  categories
 }: SplitwiseDialogProps) {
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>('');
-  const [settlingFriend, setSettlingFriend] = useState<string | null>(null);
+  const [settleUpDialogOpen, setSettleUpDialogOpen] = useState(false);
+  const [selectedFriendForSettle, setSelectedFriendForSettle] = useState<FriendBalance | null>(null);
   const { toast } = useToast();
 
-  const handleSettleUp = async (friendName: string, friendId?: number) => {
-    if (!selectedBankAccount) {
-      toast({
-        title: 'Select Bank Account',
-        description: 'Please select a bank account first.',
-        variant: 'destructive',
-      });
-      return;
-    }
+  // Filter for expense categories (type 1) only
+  const categoriesWithSubcategories = (categories || [])
+    .filter(cat => cat.type === 1)
+    .map(cat => ({
+      id: cat.id,
+      name: cat.name,
+      type: cat.type,
+      budget: cat.budget,
+      subcategories: cat.subcategories || [],
+    }));
 
+  const handleSettleUp = async (friendName: string, friendId?: number) => {
     if (!friendId) {
       toast({
         title: 'Friend ID Missing',
@@ -107,47 +129,44 @@ export function SplitwiseDialog({
       return;
     }
 
-    setSettlingFriend(friendName);
-    try {
-      // Create settlement - API will fetch and process all unsettled transactions
-      const settlementResponse = await fetch('/api/settle-up', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          friendId: friendId,
-          bankAccountId: selectedBankAccount,
-        }),
-      });
-
-      if (!settlementResponse.ok) {
-        throw new Error('Failed to create settlement');
-      }
-
-      const settlementData = await settlementResponse.json();
-      
+    // Find the friend object
+    const friend = data?.find((f: FriendBalance) => f.friendId === friendId);
+    if (!friend) {
       toast({
-        title: 'Settlement Created',
-        description: settlementData.message,
-      });
-
-      // Refresh data
-      if (onRefresh) {
-        onRefresh();
-      }
-
-    } catch (error) {
-      console.error('Error creating settlement:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to create settlement. Please try again.',
+        title: 'Friend Not Found',
+        description: 'Unable to find friend data.',
         variant: 'destructive',
       });
-    } finally {
-      setSettlingFriend(null);
+      return;
     }
+
+    // Open the settle-up dialog with the selected friend
+    setSelectedFriendForSettle(friend);
+    setSettleUpDialogOpen(true);
   };
+
+  const handleSettleUpComplete = () => {
+    // Refresh data after settlement
+    if (onRefresh) {
+      onRefresh();
+    }
+    setSettleUpDialogOpen(false);
+    setSelectedFriendForSettle(null);
+  };
+
+  // Filter out friends where both amounts are null/undefined/0
+  const filteredData = (data || []).filter((friend) => {
+    const splitwiseIsEmpty = friend.splitwiseAmount === null || 
+                             friend.splitwiseAmount === undefined || 
+                             Math.abs(friend.splitwiseAmount || 0) < 0.01;
+    const notionIsEmpty = friend.notionAmount === null || 
+                          friend.notionAmount === undefined || 
+                          Math.abs(friend.notionAmount || 0) < 0.01;
+    
+    // Keep the friend only if at least one amount is non-zero
+    return !(splitwiseIsEmpty && notionIsEmpty);
+  });
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl md:max-w-5xl h-[80vh] flex flex-col">
@@ -159,42 +178,34 @@ export function SplitwiseDialog({
                 Comparison of balances from Splitwise and Notion.
               </DialogDescription>
             </div>
-            {onRefresh && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onRefresh}
-                disabled={isLoading}
-                className="flex items-center gap-2"
-              >
-                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {onSync && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onSync}
+                  disabled={isLoading}
+                  className="flex items-center gap-2 border-green-600 text-green-600 hover:bg-green-50"
+                >
+                  <RefreshCcw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                  Sync Splitwise
+                </Button>
+              )}
+              {onRefresh && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onRefresh}
+                  disabled={isLoading}
+                  className="flex items-center gap-2 border-blue-600 text-blue-600 hover:bg-blue-50"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              )}
+            </div>
           </div>
-        </DialogHeader>
-        
-        {/* Bank Account Selection */}
-        <div className="px-1 pb-6 pt-2">
-          <div className="space-y-2 max-w-md">
-            <label className="text-sm font-medium flex items-center">
-              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded mr-2 text-xs font-bold">REQUIRED</span>
-              Select Bank Account for Settlements
-            </label>
-            <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
-              <SelectTrigger className="border-2 h-10">
-                <SelectValue placeholder="Choose bank account for settlements" />
-              </SelectTrigger>
-              <SelectContent>
-                {bankAccounts.map((account) => (
-                  <SelectItem key={account.id} value={account.id}>
-                    {account.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        </DialogHeader>      
         
         <div className="flex-grow overflow-hidden">
           <ScrollArea className="h-full pr-4 pb-4">
@@ -213,7 +224,7 @@ export function SplitwiseDialog({
                 <AlertCircle className="h-5 w-5 mr-2" />
                 Error: {error}
               </div>
-            ) : data.length > 0 ? (
+            ) : filteredData.length > 0 ? (
               <Table className="border">
                 <TableHeader>
                   <TableRow className="bg-slate-50">
@@ -224,10 +235,13 @@ export function SplitwiseDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.map((friend) => {
-                    const isMatched = friend.splitwiseAmount === friend.notionAmount;
+                  {filteredData.map((friend) => {
+                    // Use tolerance for floating point comparison
+                    const splitwise = friend.splitwiseAmount || 0;
+                    const notion = friend.notionAmount || 0;
+                    const isMatched = Math.abs(splitwise - notion) < 0.01;
                     return (
-                      <TableRow key={friend.name} className={cn("py-3 transition-colors", !isMatched ? "bg-red-50 hover:bg-red-100" : "hover:bg-slate-50")}>
+                      <TableRow key={friend.name} className={cn("py-3 transition-colors", isMatched ? "hover:bg-slate-50" : "bg-red-50 hover:bg-red-100")}>
                         <TableCell className="font-medium text-base py-3">{friend.name}</TableCell>
                         <TableCell className={cn("text-right font-semibold py-3", getAmountColor(friend.splitwiseAmount, friend.notionAmount))}>
                           <div className="flex items-center justify-end gap-1">
@@ -248,10 +262,10 @@ export function SplitwiseDialog({
                             size="sm"
                             variant="default"
                             onClick={() => handleSettleUp(friend.name, friend.friendId)}
-                            disabled={settlingFriend === friend.name || !friend.friendId}
+                            disabled={!friend.friendId}
                             className="px-4 py-1 h-8 bg-blue-600 hover:bg-blue-700 text-white"
                           >
-                            {settlingFriend === friend.name ? 'Settling...' : 'Settle Up'}
+                            Settle Up
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -267,6 +281,29 @@ export function SplitwiseDialog({
           </ScrollArea>
         </div>
       </DialogContent>
+
+      {/* Settle Up Dialog */}
+      {selectedFriendForSettle && (
+        <SettleUpDialog
+          open={settleUpDialogOpen}
+          onOpenChange={(open) => {
+            setSettleUpDialogOpen(open);
+            if (!open) {
+              setSelectedFriendForSettle(null);
+            } else {
+              handleSettleUpComplete();
+            }
+          }}
+          friends={[{
+            name: selectedFriendForSettle.name,
+            splitwiseAmount: selectedFriendForSettle.splitwiseAmount || 0,
+            notionAmount: selectedFriendForSettle.notionAmount || 0,
+            friendId: selectedFriendForSettle.friendId,
+          }]}
+          bankAccounts={bankAccounts}
+          categories={categoriesWithSubcategories}
+        />
+      )}
     </Dialog>
   );
 }
