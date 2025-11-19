@@ -102,7 +102,7 @@ const groupTransactions = (transactions: Transaction[], month: string, year: num
           month: String(month),
           category,
           subCategory,
-          expense: `₹${total.toFixed(2)}`
+          expense: `₹${Number(total).toFixed(2)}`
         }))
     );
 
