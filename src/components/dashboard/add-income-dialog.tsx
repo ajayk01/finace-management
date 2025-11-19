@@ -225,11 +225,12 @@ export function AddIncomeDialog({ open, onOpenChange, categories, subCategories,
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Date</FormLabel>
-                    <Popover>
+                    <Popover modal={true}>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
                             variant={"outline"}
+                            type="button"
                             className={cn(
                               "w-full pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
@@ -244,7 +245,7 @@ export function AddIncomeDialog({ open, onOpenChange, categories, subCategories,
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent className="w-auto p-0 z-[9999]" align="start">
                         <Calendar
                           mode="single"
                           selected={field.value}

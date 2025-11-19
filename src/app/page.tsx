@@ -97,13 +97,17 @@ const groupTransactions = (transactions: Transaction[], month: string, year: num
 
     const groupedArray: ExpenseItem[] = Object.entries(groupedMap).flatMap(
       ([category, subMap]) =>
-        Object.entries(subMap).map(([subCategory, total]) => ({
-          year: Number(year),
-          month: String(month),
-          category,
-          subCategory,
-          expense: `₹${Number(total).toFixed(2)}`
-        }))
+        Object.entries(subMap).map(([subCategory, total]) => {
+          const numTotal = Number(total);
+          const formattedTotal = isNaN(numTotal) ? '0.00' : numTotal.toFixed(2);
+          return {
+            year: Number(year),
+            month: String(month),
+            category,
+            subCategory,
+            expense: `₹${formattedTotal}`
+          };
+        })
     );
 
     return groupedArray;
@@ -366,9 +370,13 @@ export default function DashboardPage() {
     }
     
     if(accountType === 'Bank') {
-        setApiBankAccounts(prev => prev.map(acc => 
+        setApiBankAccounts(prev => {
+          const updated = prev.map(acc => 
             acc.id === accountId ? { ...acc, balance: acc.balance + newIncome.amount } : acc
-        ));
+          );
+          console.log('Updated bank accounts:', updated);
+          return updated;
+        });
     } else if (accountType === 'Credit Card') {
       // Typically income doesn't go to a credit card, but if it's a refund-like transaction:
       setApiCreditCards(prev => prev.map(card => 
