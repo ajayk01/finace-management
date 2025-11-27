@@ -132,17 +132,21 @@ export async function GET()
                     
                     // Find current user's share from repayments
                     let userAmount = 0;
-                    if (expense.repayments && Array.isArray(expense.repayments)) {
-                        for (const repayment of expense.repayments) {
-                            if (repayment.from.toString() === SPLITWISE_CURRENT_USER_ID) {
+                    let expense_created_userId; 
+                    if (expense.repayments && Array.isArray(expense.repayments)) 
+                        {
+                        for (const repayment of expense.repayments) 
+                            {
+                            if (repayment.from.toString() === SPLITWISE_CURRENT_USER_ID) 
+                            {
                                 userAmount = parseFloat(repayment.amount);
+                                expense_created_userId = repayment.to;
                                 break;
                             }
                         }
                     }
-                    
                     expenseDetails.push({
-                        friendId: Number(notification.created_by),
+                        friendId: Number(expense_created_userId),
                         date: formattedDate,
                         amount: userAmount,
                         expenseId: notification.source.id
