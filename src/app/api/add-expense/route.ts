@@ -284,7 +284,8 @@ export async function POST(request: NextRequest)
         }
 
         // Validate custom amounts if customAmounts exists
-        if (includeSplitwise && customAmounts && splitwiseUserIds) {
+        if (includeSplitwise && customAmounts && splitwiseUserIds) 
+        {
             const totalCustomAmount = Object.values(customAmounts).reduce((sum, amt) => sum + amt, 0);
             if (Math.abs(totalCustomAmount - amount) > 0.01) 
             {
@@ -299,7 +300,8 @@ export async function POST(request: NextRequest)
             let transactionId: number;
             let splitwiseTransactionId: string | undefined;
             
-            if (includeSplitwise && splitwiseGroupId && splitwiseUserIds && splitwiseUserIds.length > 0) {
+            if (includeSplitwise && splitwiseGroupId && splitwiseUserIds && splitwiseUserIds.length > 0) 
+            {
                 // Add to Splitwise first and capture the response
                 const splitwiseResponse = await addSplitwiseExpense({
                     amount: splitAmt,

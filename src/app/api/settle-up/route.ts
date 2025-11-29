@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
           // Create offsetting settlement entry (negative amount = income/settlement)
           const settlementSql = `
             INSERT INTO Transactions 
-            (AMOUNT, DATE, NOTES, TO_ACCOUNT_ID, CATEGORY_ID, SUB_CATEGORY_ID, TRANSCATION_TYPE) 
+            (AMOUNT, DATE, NOTES, FROM_ACCOUNT_ID, CATEGORY_ID, SUB_CATEGORY_ID, TRANSCATION_TYPE) 
             VALUES (?, ?, ?, ?, ?, ?, ?)
           `;
 
