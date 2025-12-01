@@ -354,11 +354,11 @@ export default function DashboardPage() {
     // Update account balances
     if(accountType === 'Bank') {
         setApiBankAccounts(prev => prev.map(acc => 
-            acc.id === accountId ? { ...acc, balance: acc.balance - newExpense.amount } : acc
+            acc.id === accountId ? { ...acc, balance: Number(acc.balance) - Number(newExpense.amount) } : acc
         ));
     } else if (accountType === 'Credit Card') {
         setApiCreditCards(prev => prev.map(card => 
-            card.id === accountId ? { ...card, usedAmount: card.usedAmount + newExpense.amount } : card
+            card.id === accountId ? { ...card, usedAmount: Number(card.usedAmount) + Number(newExpense.amount) } : card
         ));
     }
   }, [selectedExpenseMonth, selectedExpenseYear]);
@@ -372,7 +372,7 @@ export default function DashboardPage() {
     if(accountType === 'Bank') {
         setApiBankAccounts(prev => {
           const updated = prev.map(acc => 
-            acc.id === accountId ? { ...acc, balance: acc.balance + newIncome.amount } : acc
+            acc.id === accountId ? { ...acc, balance: Number(acc.balance) + Number(newIncome.amount) } : acc
           );
           console.log('Updated bank accounts:', updated);
           return updated;
@@ -380,7 +380,7 @@ export default function DashboardPage() {
     } else if (accountType === 'Credit Card') {
       // Typically income doesn't go to a credit card, but if it's a refund-like transaction:
       setApiCreditCards(prev => prev.map(card => 
-          card.id === accountId ? { ...card, usedAmount: card.usedAmount - newIncome.amount } : card
+          card.id === accountId ? { ...card, usedAmount: Number(card.usedAmount) - Number(newIncome.amount) } : card
       ));
     }
   }, [selectedIncomeMonth, selectedIncomeYear]);
@@ -392,7 +392,7 @@ export default function DashboardPage() {
     }
 
     setApiBankAccounts(prev => prev.map(acc =>
-        acc.id === fromAccountId ? { ...acc, balance: acc.balance - newInvestment.amount } : acc
+        acc.id === fromAccountId ? { ...acc, balance: Number(acc.balance) - Number(newInvestment.amount) } : acc
     ));
   }, [selectedInvestmentMonth, selectedInvestmentYear]);
 
@@ -415,12 +415,12 @@ export default function DashboardPage() {
   const handlePaymentMade = useCallback((payment: Transaction, fromBankId: string, toCreditCardId: string, amount: number) => {
     // Update bank account balance (decrease)
     setApiBankAccounts(prev => prev.map(acc => 
-      acc.id === fromBankId ? { ...acc, balance: acc.balance - amount } : acc
+      acc.id === fromBankId ? { ...acc, balance: Number(acc.balance) - Number(amount) } : acc
     ));
     
     // Update credit card used amount (decrease)
     setApiCreditCards(prev => prev.map(card => 
-      card.id === toCreditCardId ? { ...card, usedAmount: card.usedAmount - amount } : card
+      card.id === toCreditCardId ? { ...card, usedAmount: Number(card.usedAmount) - Number(amount) } : card
     ));
 
     // Add the payment as an expense in the current month if it matches

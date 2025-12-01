@@ -148,7 +148,7 @@ async function fetchMonthlyIncomeFromDB({
         id: tx.ID.toString(),
         date: new Date(tx.DATE).toISOString().split('T')[0],
         description: tx.NOTES || 'No Description',
-        amount: tx.AMOUNT,
+        amount: Number(tx.AMOUNT),
         type: 'Income' as const,
         category: tx.CATEGORY_NAME || 'Uncategorized',
         subCategory: tx.SUB_CATEGORY_NAME || ''
@@ -177,7 +177,7 @@ function groupTransactions(transactions: IncomeTransaction[], month: string, yea
           month: String(month),
           category,
           subCategory,
-          expense: `₹${total}` // Key is 'expense' to match generic component
+          expense: `₹${total.toFixed(2)}` // Key is 'expense' to match generic component
         }))
     );
     return groupedArray;

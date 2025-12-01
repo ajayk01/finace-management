@@ -263,11 +263,14 @@ export async function POST(request: NextRequest)
         // Only populate equal shares if splitType is 'equal' or customAmounts is not provided
         if (includeSplitwise && splitwiseUserIds && splitwiseUserIds.length > 0)
         {
-            if (splitType === 'custom' && customAmounts && Object.keys(customAmounts).length > 0) {
+            if (splitType === 'custom' && customAmounts && Object.keys(customAmounts).length > 0) 
+            {
                 // Use custom amounts provided by user
                 splitAmt = Object.values(customAmounts).reduce((sum, amt) => sum + amt, 0);
                 console.log('Using custom amounts, total:', splitAmt);
-            } else {
+            } 
+            else 
+            {
                 // Calculate equal share for each user (default or when splitType is 'equal')
                 const perUserAmount = Math.ceil(amount / splitwiseUserIds.length);
                 splitAmt = perUserAmount * splitwiseUserIds.length;

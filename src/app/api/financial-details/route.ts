@@ -91,7 +91,7 @@ async function fetchGroupedMonthlyExpensesFromDB({
           month: String(month),
           category,
           subCategory,
-          expense: `₹${total}`
+          expense: `₹${total.toFixed(2)}`
         }))
     );
 
@@ -157,7 +157,7 @@ async function fetchMonthlyIncomesFromDB({
           month: String(month),
           category,
           subCategory,
-          expense: `₹${total}`
+          expense: `₹${total.toFixed(2)}`
         }))
     );
 
@@ -217,7 +217,7 @@ async function fetchMonthlyInvFromDB({
         month: String(month),
         category: accountName,
         subCategory: '',
-        expense: `₹${total}`
+        expense: `₹${total.toFixed(2)}`
       })
     );
 
