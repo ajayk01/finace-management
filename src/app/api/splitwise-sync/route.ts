@@ -119,7 +119,7 @@ export async function GET()
             // Check if source type is Expense
             if (notification.source && 
                 notification.source.type === 'Expense' && 
-                notification.source.id) {
+                notification.source.id && notification.content.includes("added")) {
                 
                 try {
                     // Fetch expense details

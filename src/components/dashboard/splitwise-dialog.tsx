@@ -629,7 +629,13 @@ export function SplitwiseDialog({
           <DialogFooter>
             <Button
               onClick={handleSettle}
-              disabled={!selectedBankAccount || unsettledExpenses.length === 0 || isSettling}
+              disabled={
+                !selectedBankAccount || 
+                isSettling ||
+                (unsettledExpenses.length > 0 && unsettledExpenses.some(
+                  exp => !expenseSelections[exp.splitwiseTransactionId]?.categoryId
+                ))
+              }
             >
               {isSettling ? 'Creating Settlement...' : (() => {
                 const alreadyPaidTotal = transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
