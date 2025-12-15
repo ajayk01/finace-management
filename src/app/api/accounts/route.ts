@@ -3,6 +3,13 @@ import type { NextRequest } from 'next/server';
 import { query, AccountType } from '@/lib/db';
 import type { Account as DBAccount, CreditCardDetails as DBCreditCardDetails, InvestmentAccountDetails as DBInvestmentAccountDetails } from '@/types/database';
 
+interface CreateAccountRequest {
+  accountName: string;
+  accountType: 'Bank' | 'Credit Card' | 'Investment';
+  initialBalance?: number;
+  totalLimit?: number;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -102,6 +109,108 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching accounts:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while fetching accounts.';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body: CreateAccountRequest = await request.json();
+    const { accountName, accountType, initialBalance = 0, totalLimit } = body;
+
+    // Validate required fields
+    if (!accountName || !accountType) {
+      return NextResponse.json(
+        { error: 'Account name and account type are required.' },
+        { status: 400 }
+      );
+    }
+
+    // Validate account type
+    if (!['Bank', 'Credit Card', 'Investment'].includes(accountType)) {
+      return NextResponse.json(
+        { error: 'Invalid account type. Must be Bank, Credit Card, or Investment.' },
+        { status: 400 }
+      );
+    }
+
+    // Validate total limit for credit cards
+    if (accountType === 'Credit Card' && (!totalLimit || totalLimit <= 0)) {
+      return NextResponse.json(
+        { error: 'Total limit is required for credit cards and must be greater than 0.' },
+        { status: 400 }
+      );
+    }
+
+    // Map account type to database enum
+    let accountTypeId: number;
+    switch (accountType) {
+      case 'Bank':
+        accountTypeId = AccountType.BANK;
+        break;
+      case 'Credit Card':
+        accountTypeId = AccountType.CREDIT_CARD;
+        break;
+      case 'Investment':
+        accountTypeId = AccountType.INVESTMENT;
+        break;
+      default:
+        return NextResponse.json({ error: 'Invalid account type.' }, { status: 400 });
+    }
+
+    // Insert into Accounts table
+    const insertAccountSql = `
+      INSERT INTO Accounts (ACCOUNT_NAME, CURRENT_BALANCE, INITIAL_BALANCE, ACCOUNT_TYPE, IS_ACTIVE, TOTAL_LIMITS)
+      VALUES (?, ?, ?, ?, 1, ?)
+    `;
+
+    const accountResult: any = await query(
+      insertAccountSql,
+      [
+        accountName,
+        initialBalance,
+        initialBalance,
+        accountTypeId,
+        accountType === 'Credit Card' ? totalLimit : null
+      ]
+    );
+
+    const accountId = accountResult.insertId;
+
+    // Create type-specific details
+    if (accountType === 'Credit Card') 
+    {
+      var currentTime = BigInt(Date.now());
+      const insertCCDetailsSql = `
+        INSERT INTO CreditCardDetails (CREDIT_CARD_ID, TOTAL_LIMIT, CREATED_DATE, CURRENT_REWARD_POINTS)
+        VALUES (?, ?, ?, 0)
+      `;
+      await query(insertCCDetailsSql, [accountId, totalLimit, currentTime]);
+    } 
+    else if (accountType === 'Investment') 
+      {
+        var currentTime = BigInt(Date.now());
+
+        const insertInvDetailsSql = `
+          INSERT INTO InvestmentAccountDetails (INVESTMENT_ACCOUNT_ID, TOTAL_INVESTED, TOTAL_WITHDRAW, CREATED_DATE, CURRENT_VALUE, XIRR)
+          VALUES (?, 0, 0, ?, 0, 0)
+      `;
+      await query(insertInvDetailsSql, [accountId, currentTime]);
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: 'Account created successfully',
+        accountId: accountId.toString(),
+      },
+      { status: 201 }
+    );
+
+  } catch (error) {
+    console.error('Error creating account:', error);
+    const 
+    errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while creating account.';
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

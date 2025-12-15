@@ -43,7 +43,7 @@ import type { Transaction } from '@/app/page';
 
 
 const expenseSchemaBase = z.object({
-  amount: z.coerce.number().min(0.01, 'Amount must be greater than 0.'),
+  amount: z.coerce.number().refine((val) => val !== 0, { message: 'Amount cannot be zero.' }),
   date: z.date({ required_error: 'A date is required.' }),
   description: z.string().min(1, 'Description is required.'),
   accountId: z.string().min(1, 'Please select an account.'),
