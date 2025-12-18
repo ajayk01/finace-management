@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { query, AccountType } from '@/lib/db';
+import { query } from '@/lib/db';
 import type { Account } from '@/types/database';
 
 export async function GET() {
@@ -7,12 +7,11 @@ export async function GET() {
     const sql = `
       SELECT ID, ACCOUNT_NAME
       FROM Accounts
-      WHERE ACCOUNT_TYPE = ?
-        AND IS_ACTIVE = 1
+      WHERE ACCOUNT_TYPE = 3
       ORDER BY ACCOUNT_NAME
     `;
     
-    const accounts = await query<Account>(sql, [AccountType.INVESTMENT]);
+    const accounts = await query<Account>(sql);
     
     const investmentAccounts = accounts.map((acc: Account) => ({
       id: acc.ID.toString(),

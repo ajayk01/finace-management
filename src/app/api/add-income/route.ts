@@ -102,3 +102,55 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'An internal server error occurred.' }, { status: 500 });
     }
 }
+const updateIncomeSchema = z.object({
+  id: z.string(),
+  amount: z.number(),
+  date: z.string(),
+  description: z.string().optional(),
+  accountId: z.string(),
+  categoryId: z.string(),
+  subCategoryId: z.string().optional(),
+});
+
+export async function PUT(request: NextRequest) {
+    try {
+        const body = await request.json();
+        const parsedData = updateIncomeSchema.parse(body);
+        const { id, amount, date, description, accountId, categoryId, subCategoryId } = parsedData;
+
+        const epochTime = new Date(date).getTime();
+
+        const sql = `
+            UPDATE Transactions 
+            SET DATE = ?,
+                NOTES = ?,
+                AMOUNT = ?,
+                TO_ACCOUNT_ID = ?,
+                CATEGORY_ID = ?,
+                SUB_CATEGORY_ID = ?
+            WHERE ID = ? AND TRANSCATION_TYPE = ?
+        `;
+
+        await query(sql, [
+            epochTime,
+            description || '',
+            amount,
+            parseInt(accountId),
+            parseInt(categoryId),
+            subCategoryId ? parseInt(subCategoryId) : null,
+            parseInt(id),
+            TransactionType.INCOME
+        ]);
+
+        return NextResponse.json({ 
+            success: true, 
+            message: 'Income updated successfully.'
+        });
+    } catch (error) {
+        if (error instanceof Error) {
+            return NextResponse.json({ error: error.message }, { status: 500 });
+        } else {
+            return NextResponse.json({ error: String(error) }, { status: 500 });
+        }
+    }
+}

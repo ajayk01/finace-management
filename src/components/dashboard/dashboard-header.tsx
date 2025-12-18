@@ -42,6 +42,7 @@ interface DashboardHeaderProps {
   onPaymentMade: (payment: Transaction, fromBankId: string, toCreditCardId: string, amount: number) => void;
   onTransferAdded?: (newTransfer: Transaction, fromAccountId: string, toAccountId: string) => void;
   onOpenSplitwiseDialog: () => void;
+  onOpenAllTransactionsDialog?: () => void;
 }
 
 export function DashboardHeader({ 
@@ -57,7 +58,8 @@ export function DashboardHeader({
     onInvestmentAdded,
     onPaymentMade,
     onTransferAdded,
-    onOpenSplitwiseDialog
+    onOpenSplitwiseDialog,
+    onOpenAllTransactionsDialog
 }: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -152,6 +154,8 @@ export function DashboardHeader({
                     <DropdownMenuItem onClick={() => setIsAddAccountOpen(true)}>Add Account</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsAddTransferOpen(true)}>Add Transfer</DropdownMenuItem>
                     <DropdownMenuItem onClick={onOpenSplitwiseDialog}>Splitwise</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onOpenAllTransactionsDialog}>Get All Transactions</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsPayCCBillOpen(true)}>Pay CC bill</DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>

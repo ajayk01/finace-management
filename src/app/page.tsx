@@ -7,6 +7,7 @@ import { MonthlySummaryChart } from "@/components/dashboard/monthly-summary-char
 import { MonthlyMoneyTable, type FinancialSnapshotItem } from "@/components/dashboard/monthly-money-table";
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog"; // Import new component
 import { InvestmentCalculatorDialog } from "@/components/dashboard/investment-calculator-dialog";
+import { AllTransactionsDialog } from "@/components/dashboard/all-transactions-dialog";
 import { AlertCircle } from "lucide-react";
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { Category, SubCategory, Account } from "@/components/dashboard/add-expense-dialog";
@@ -198,6 +199,10 @@ export default function DashboardPage() {
   const [isFriendsBalanceLoading, setIsFriendsBalanceLoading] = useState(false);
   const [friendsBalanceError, setFriendsBalanceError] = useState<string | null>(null);
   const [friendsBalance, setFriendsBalance] = useState<FriendBalance[]>([]);
+  
+  // State for All Transactions dialog
+  const [isAllTransactionsDialogOpen, setIsAllTransactionsDialogOpen] = useState(false);
+  
   const availableYears = useMemo(() => getAvailableYears(), []);
   
   // --- Data Fetching Functions ---
@@ -787,6 +792,7 @@ export default function DashboardPage() {
         onInvestmentAdded={handleInvestmentAdded}
         onPaymentMade={handlePaymentMade}
         onOpenSplitwiseDialog={handleOpenSplitwiseDialog}
+        onOpenAllTransactionsDialog={() => setIsAllTransactionsDialogOpen(true)}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1007,6 +1013,31 @@ export default function DashboardPage() {
           name: account.name,
         }))}
         categories={fullExpenseCategories}
+      />
+      <AllTransactionsDialog
+        open={isAllTransactionsDialogOpen}
+        onOpenChange={setIsAllTransactionsDialogOpen}
+        onTransactionUpdated={() => {
+          fetchBankDetails();
+          fetchCreditCardDetails();
+        }}
+        expenseCategories={expenseCategories}
+        expenseSubCategories={expenseSubCategories}
+        incomeCategories={incomeCategories}
+        incomeSubCategories={incomeSubCategories}
+        bankAccounts={apiBankAccounts.map(acc => ({
+          id: acc.id,
+          name: acc.name,
+          type: 'Bank' as const,
+          balance: acc.balance
+        }))}
+        creditCards={apiCreditCards.map(card => ({
+          id: card.id,
+          name: card.name,
+          type: 'Credit Card' as const,
+          usedAmount: card.usedAmount,
+          totalLimit: card.totalLimit
+        }))}
       />
     </div>
   );
