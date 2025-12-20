@@ -54,6 +54,8 @@ interface AddIncomeDialogProps {
   subCategories: SubCategory[];
   accounts: Account[];
   onIncomeAdded: (newIncome: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
+  editTransactionId?: string; // Optional: ID of transaction being edited
+  initialValues?: Partial<IncomeFormValues>; // Optional: Initial form values for editing
 }
 
 export interface Category {
@@ -75,10 +77,20 @@ export interface Account {
 
 export type IncomeFormValues = z.infer<typeof incomeSchemaBase>;
 
-export function AddIncomeDialog({ open, onOpenChange, categories, subCategories, accounts, onIncomeAdded }: AddIncomeDialogProps) {
+export function AddIncomeDialog({ 
+  open, 
+  onOpenChange, 
+  categories, 
+  subCategories, 
+  accounts, 
+  onIncomeAdded,
+  editTransactionId,
+  initialValues 
+}: AddIncomeDialogProps) {
   const { toast } = useToast();
   const [filteredSubCategories, setFilteredSubCategories] = useState<SubCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const isEditMode = !!editTransactionId;
 
   const incomeSchema = incomeSchemaBase.refine(
     (data) => {
@@ -96,7 +108,7 @@ export function AddIncomeDialog({ open, onOpenChange, categories, subCategories,
 
   const form = useForm<IncomeFormValues>({
     resolver: zodResolver(incomeSchema),
-    defaultValues: {
+    defaultValues: initialValues || {
       amount: 0,
       description: '',
       accountId: '',
@@ -112,7 +124,15 @@ export function AddIncomeDialog({ open, onOpenChange, categories, subCategories,
     if (selectedCategoryId) {
       const relatedSubCategories = subCategories.filter((sc) => sc.categoryId === selectedCategoryId);
       setFilteredSubCategories(relatedSubCategories);
-      form.setValue('subCategoryId', '');
+      
+      // Only clear subCategoryId if current value doesn't belong to the selected category
+      const currentSubCategoryId = form.getValues('subCategoryId');
+      const isValidSubCategory = relatedSubCategories.some(sc => sc.id === currentSubCategoryId);
+      
+      if (currentSubCategoryId && !isValidSubCategory) {
+        form.setValue('subCategoryId', '');
+      }
+      
       if (form.formState.isSubmitted) {
         form.trigger('subCategoryId');
       }
@@ -138,7 +158,7 @@ export function AddIncomeDialog({ open, onOpenChange, categories, subCategories,
         return;
     }
 
-    const payload = {
+    const payload: any = {
         amount: values.amount,
         date: format(values.date, 'yyyy-MM-dd'),
         description: values.description,
@@ -149,22 +169,27 @@ export function AddIncomeDialog({ open, onOpenChange, categories, subCategories,
         categoryId: values.categoryId,
         subCategoryId: values.subCategoryId,
     };
+    
+    // Add transaction ID if editing
+    if (isEditMode && editTransactionId) {
+        payload.id = editTransactionId;
+    }
 
     try {
         const response = await fetch('/api/add-income', {
-            method: 'POST',
+            method: isEditMode ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
 
         const result = await response.json();
         if (!response.ok) {
-            throw new Error(result.error || 'Failed to add income.');
+            throw new Error(result.error || `Failed to ${isEditMode ? 'update' : 'add'} income.`);
         }
 
         toast({
-            title: 'Income Added',
-            description: `The income "${values.description}" has been successfully recorded.`,
+            title: isEditMode ? 'Income Updated' : 'Income Added',
+            description: `The income "${values.description}" has been successfully ${isEditMode ? 'updated' : 'recorded'}.`,
         });
 
         const categoryName = categories.find(c => c.id === values.categoryId)?.name || 'N/A';
@@ -198,9 +223,9 @@ export function AddIncomeDialog({ open, onOpenChange, categories, subCategories,
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add New Income</DialogTitle>
+          <DialogTitle>{isEditMode ? 'Edit Income' : 'Add New Income'}</DialogTitle>
           <DialogDescription>
-            Fill in the details below to add a new income transaction.
+            {isEditMode ? 'Update the details of your income transaction.' : 'Fill in the details below to add a new income transaction.'}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -345,7 +370,7 @@ export function AddIncomeDialog({ open, onOpenChange, categories, subCategories,
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={handleClose}>Cancel</Button>
               <Button type="submit" disabled={isLoading}>
-                {isLoading ? 'Adding...' : 'Add Income'}
+                {isLoading ? (isEditMode ? 'Updating...' : 'Adding...') : (isEditMode ? 'Update Income' : 'Add Income')}
               </Button>
             </DialogFooter>
           </form>

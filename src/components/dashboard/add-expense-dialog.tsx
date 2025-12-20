@@ -49,6 +49,7 @@ const expenseSchemaBase = z.object({
   accountId: z.string().min(1, 'Please select an account.'),
   categoryId: z.string().min(1, 'Category is required.'),
   subCategoryId: z.string().optional(), // Make optional initially
+  capId: z.string().optional(), // Credit card cap ID
   includeSplitwise: z.boolean().default(false),
   splitwiseGroupId: z.string().optional(),
   splitwiseUserIds: z.array(z.string()).optional(),
@@ -64,6 +65,8 @@ interface AddExpenseDialogProps {
   subCategories: SubCategory[];
   accounts: Account[];
   onExpenseAdded: (newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
+  editTransactionId?: string; // Optional: ID of transaction being edited
+  initialValues?: Partial<ExpenseFormValues>; // Optional: Initial form values for editing
 }
 
 export interface Category {
@@ -97,14 +100,34 @@ export interface SplitwiseGroup {
     members: SplitwiseUser[];
 }
 
+export interface CreditCardCap {
+    id: string;
+    creditCardId: string;
+    capName: string;
+    capTotalAmount: number;
+    capPercentage: number;
+    capCurrentAmount: number;
+    remainingAmount: number;
+}
+
 export type ExpenseFormValues = z.infer<typeof expenseSchemaBase>;
 
 
-export function AddExpenseDialog({ open, onOpenChange, categories, subCategories, accounts, onExpenseAdded }: AddExpenseDialogProps) {
+export function AddExpenseDialog({ 
+  open, 
+  onOpenChange, 
+  categories, 
+  subCategories, 
+  accounts, 
+  onExpenseAdded,
+  editTransactionId,
+  initialValues 
+}: AddExpenseDialogProps) {
   const { toast } = useToast();
   const [filteredSubCategories, setFilteredSubCategories] = useState<SubCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
+  const isEditMode = !!editTransactionId;
   
   // State for Splitwise
   const [splitwiseGroups, setSplitwiseGroups] = useState<SplitwiseGroup[]>([]);
@@ -112,6 +135,10 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
   const [splitwiseError, setSplitwiseError] = useState<string | null>(null);
   const [splitwiseUsers, setSplitwiseUsers] = useState<SplitwiseUser[]>([]);
   const [customAmounts, setCustomAmounts] = useState<Record<string, number>>({});
+  
+  // State for Credit Card Caps
+  const [creditCardCaps, setCreditCardCaps] = useState<CreditCardCap[]>([]);
+  const [isCapsLoading, setIsCapsLoading] = useState(false);
 
   // Dynamically create the refined schema inside the component
   const expenseSchema = expenseSchemaBase.refine(
@@ -145,12 +172,13 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
-    defaultValues: {
+    defaultValues: initialValues || {
       amount: 0,
       description: '',
       accountId: '',
       categoryId: '',
       subCategoryId: '',
+      capId: undefined,
       date: new Date(),
       includeSplitwise: false,
       splitwiseGroupId: '',
@@ -161,16 +189,59 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
   });
 
   const selectedCategoryId = form.watch('categoryId');
+  const selectedAccountId = form.watch('accountId');
   const selectedSplitwiseGroupId = form.watch('splitwiseGroupId');
   const selectedSplitwiseUsers = form.watch('splitwiseUserIds') || [];
   const splitType = form.watch('splitType');
   const totalAmount = form.watch('amount');
 
+  // Load Splitwise data if editing expense with Splitwise
+  useEffect(() => {
+    if (open && isEditMode && initialValues?.includeSplitwise && initialValues.splitwiseGroupId) {
+      // Fetch Splitwise groups to populate the form
+      const fetchSplitwiseData = async () => {
+        setIsSplitwiseLoading(true);
+        setSplitwiseError(null);
+        try {
+          const res = await fetch('/api/splitwise');
+          if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch Splitwise data');
+          const data = await res.json();
+          const groups = data.groups || [];
+          setSplitwiseGroups(groups);
+          
+          // Find and set users for the initial group
+          const initialGroup = groups.find((g: SplitwiseGroup) => g.id === initialValues.splitwiseGroupId);
+          if (initialGroup) {
+            setSplitwiseUsers(initialGroup.members || []);
+          }
+          
+          // Set initial custom amounts if available
+          if (initialValues.customAmounts) {
+            setCustomAmounts(initialValues.customAmounts);
+          }
+        } catch (error) {
+          setSplitwiseError(error instanceof Error ? error.message : "An unknown error occurred");
+        } finally {
+          setIsSplitwiseLoading(false);
+        }
+      };
+      fetchSplitwiseData();
+    }
+  }, [open, isEditMode, initialValues]);
+
   useEffect(() => {
     if (selectedCategoryId) {
       const relatedSubCategories = subCategories.filter((sc) => sc.categoryId === selectedCategoryId);
       setFilteredSubCategories(relatedSubCategories);
-      form.setValue('subCategoryId', '');
+      
+      // Only clear subCategoryId if current value doesn't belong to the selected category
+      const currentSubCategoryId = form.getValues('subCategoryId');
+      const isValidSubCategory = relatedSubCategories.some(sc => sc.id === currentSubCategoryId);
+      
+      if (currentSubCategoryId && !isValidSubCategory) {
+        form.setValue('subCategoryId', '');
+      }
+      
        // Re-validate when category changes
       if (form.formState.isSubmitted) {
         form.trigger('subCategoryId');
@@ -180,19 +251,63 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
     }
   }, [selectedCategoryId, subCategories, form]);
 
+  // Fetch credit card caps when account changes
+  useEffect(() => {
+    const fetchCaps = async () => {
+      if (!selectedAccountId) {
+        setCreditCardCaps([]);
+        form.setValue('capId', undefined);
+        return;
+      }
+
+      const selectedAccount = accounts.find(acc => acc.id === selectedAccountId);
+      
+      // Only fetch caps if the selected account is a credit card
+      if (selectedAccount?.type !== 'Credit Card') {
+        setCreditCardCaps([]);
+        form.setValue('capId', undefined);
+        return;
+      }
+
+      setIsCapsLoading(true);
+      try {
+        const response = await fetch(`/api/credit-card-caps?creditCardId=${selectedAccountId}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch credit card caps');
+        }
+        const data = await response.json();
+        setCreditCardCaps(data.caps || []);
+      } catch (error) {
+        console.error('Error fetching credit card caps:', error);
+        setCreditCardCaps([]);
+      } finally {
+        setIsCapsLoading(false);
+      }
+    };
+
+    fetchCaps();
+  }, [selectedAccountId, accounts]);
+
   useEffect(() => {
     if (selectedSplitwiseGroupId) {
         const group = splitwiseGroups.find(g => g.id === selectedSplitwiseGroupId);
         setSplitwiseUsers(group?.members || []);
-        form.setValue('splitwiseUserIds', []); // Reset users when group changes
-        // Reset custom amounts and split type when group changes
-        setCustomAmounts({});
-        form.setValue('customAmounts', {});
-        form.setValue('splitType', 'equal');
+        
+        // Only reset users if this is NOT initial load with edit data
+        const hasInitialUsers = initialValues?.splitwiseUserIds && initialValues.splitwiseUserIds.length > 0;
+        const isInitialGroupLoad = isEditMode && initialValues?.splitwiseGroupId === selectedSplitwiseGroupId && hasInitialUsers;
+        
+        if (!isInitialGroupLoad) {
+          // User manually changed the group - reset selections
+          form.setValue('splitwiseUserIds', []);
+          setCustomAmounts({});
+          form.setValue('customAmounts', {});
+          form.setValue('splitType', 'equal');
+        }
     } else {
         setSplitwiseUsers([]);
     }
-  }, [selectedSplitwiseGroupId, splitwiseGroups, form]);
+  }, [selectedSplitwiseGroupId, splitwiseGroups, form, isEditMode, initialValues]);
 
   // Reset custom amounts when users change
   useEffect(() => {
@@ -240,6 +355,21 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
         includeSplitwise: values.includeSplitwise
     };
     
+    // Only include capId if it's defined and not empty
+    if (values.capId) {
+        payload.capId = values.capId;
+    }
+    
+    // Add transaction ID and account info for edit mode
+    if (isEditMode && editTransactionId) {
+        payload.id = editTransactionId;
+        // Ensure account object is included for PUT requests
+        payload.account = {
+            id: values.accountId,
+            type: selectedAccount.type,
+        };
+    }
+    
     if (values.includeSplitwise) {
         payload.splitwiseGroupId = values.splitwiseGroupId;
         payload.splitwiseUserIds = values.splitwiseUserIds;
@@ -250,8 +380,9 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
 
 
     try {
+        console.log(`${isEditMode ? 'Editing' : 'Adding'} expense with payload:`, payload);
         const response = await fetch('/api/add-expense', {
-            method: 'POST',
+            method: isEditMode ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
@@ -259,12 +390,12 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
         const result = await response.json();
 
         if (!response.ok) {
-            throw new Error(result.error || 'Failed to add expense.');
+            throw new Error(result.error || `Failed to ${isEditMode ? 'update' : 'add'} expense.`);
         }
 
         toast({
-            title: 'Expense Added',
-            description: `The expense "${values.description}" has been successfully recorded.`,
+            title: isEditMode ? 'Expense Updated' : 'Expense Added',
+            description: `The expense "${values.description}" has been successfully ${isEditMode ? 'updated' : 'recorded'}.`,
         });
 
         // Construct the new transaction object for client-side update
@@ -591,10 +722,10 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{step === 1 ? 'Add New Expense' : 'Add Splitwise Details'}</DialogTitle>
+          <DialogTitle>{isEditMode ? 'Edit Expense' : (step === 1 ? 'Add New Expense' : 'Add Splitwise Details')}</DialogTitle>
           <DialogDescription>
              {step === 1 
-               ? "Fill in the details below to add a new expense transaction."
+               ? `Fill in the details below to ${isEditMode ? 'update this' : 'add a new'} expense transaction.`
                : "Select the group and users to split this expense with."
              }
           </DialogDescription>
@@ -748,6 +879,76 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
                         </FormItem>
                     )}
                 />
+                
+                {/* Credit Card Cap Selection */}
+                {selectedAccountId && accounts.find(acc => acc.id === selectedAccountId)?.type === 'Credit Card' && (
+                  <FormField
+                    control={form.control}
+                    name="capId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Credit Card Cap (Optional)</FormLabel>
+                        <Select 
+                          onValueChange={field.onChange} 
+                          value={field.value} 
+                          disabled={isCapsLoading || creditCardCaps.length === 0}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue 
+                                placeholder={
+                                  isCapsLoading 
+                                    ? "Loading caps..." 
+                                    : creditCardCaps.length === 0 
+                                      ? "No caps available" 
+                                      : "Select a cap"
+                                } 
+                              />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {creditCardCaps.map(cap => (
+                              <SelectItem key={cap.id} value={cap.id}>
+                                {cap.capName} - ₹{cap.remainingAmount.toFixed(2)} remaining (₹{cap.capCurrentAmount.toFixed(2)}/₹{cap.capTotalAmount})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+                
+                {/* Show Splitwise indicator if expense has Splitwise data */}
+                {isEditMode && initialValues?.splitwiseGroupId && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-blue-600" />
+                        <span className="text-sm font-medium text-blue-900">
+                          This expense is split on Splitwise
+                        </span>
+                      </div>
+                      <Button 
+                        type="button" 
+                        variant="link" 
+                        size="sm"
+                        onClick={async () => {
+                          // Ensure Splitwise data is loaded before navigating
+                          if (splitwiseGroups.length === 0 && !isSplitwiseLoading) {
+                            await handleGoToSplitwise();
+                          } else {
+                            setStep(2);
+                          }
+                        }}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        View Details →
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -758,7 +959,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
               {step === 1 && (
                 <>
                   <Button type="submit" disabled={isLoading} onClick={() => form.setValue('includeSplitwise', false)}>
-                    {isLoading ? 'Adding...' : 'Add Expense'}
+                    {isLoading ? (isEditMode ? 'Updating...' : 'Adding...') : (isEditMode ? 'Update Expense' : 'Add Expense')}
                   </Button>
                   <Button type="button" variant="outline" onClick={handleGoToSplitwise} disabled={isSplitwiseLoading}>
                     {isSplitwiseLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -770,7 +971,7 @@ export function AddExpenseDialog({ open, onOpenChange, categories, subCategories
                  <>
                     <Button type="button" variant="outline" onClick={() => setStep(1)}>Back</Button>
                     <Button type="submit" disabled={isLoading}>
-                        {isLoading ? 'Adding...' : 'Add Expense & Split'}
+                        {isLoading ? (isEditMode ? 'Updating...' : 'Adding...') : (isEditMode ? 'Update Expense & Split' : 'Add Expense & Split')}
                     </Button>
                  </>
               )}

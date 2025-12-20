@@ -50,29 +50,37 @@ async function fetchAllTransactionsFromDB({
 
     const sql = `
       SELECT 
-        t.ID,
-        t.DATE,
-        t.AMOUNT,
-        t.NOTES,
-        t.TRANSCATION_TYPE,
-        c.CATEGORY_NAME,
-        sc.SUB_CATEGORY_NAME,
-        t.CATEGORY_ID,
-        t.SUB_CATEGORY_ID,
-        t.FROM_ACCOUNT_ID,
-        t.TO_ACCOUNT_ID,
-        aFrom.ACCOUNT_NAME as FROM_ACCOUNT_NAME,
-        aTo.ACCOUNT_NAME as TO_ACCOUNT_NAME
-      FROM Transactions t
-      LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
-      LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
-      LEFT JOIN Accounts aFrom ON t.FROM_ACCOUNT_ID = aFrom.ID
-      LEFT JOIN Accounts aTo ON t.TO_ACCOUNT_ID = aTo.ID
-      WHERE t.TRANSCATION_TYPE IN (?, ?, ?)
-        AND t.DATE >= ?
-        AND t.DATE <= ?
-      ORDER BY t.DATE DESC
+    t.ID,
+    t.DATE,
+    t.AMOUNT,
+    t.NOTES,
+    t.TRANSCATION_TYPE,
+    c.CATEGORY_NAME,
+    sc.SUB_CATEGORY_NAME,
+    t.CATEGORY_ID,
+    t.SUB_CATEGORY_ID,
+    t.FROM_ACCOUNT_ID,
+    t.TO_ACCOUNT_ID,
+    aFrom.ACCOUNT_NAME AS FROM_ACCOUNT_NAME,
+    aTo.ACCOUNT_NAME AS TO_ACCOUNT_NAME,
+    cct.CAP_ID
+    FROM Transactions t
+    LEFT JOIN Category c 
+        ON t.CATEGORY_ID = c.ID
+    LEFT JOIN SubCategory sc 
+        ON t.SUB_CATEGORY_ID = sc.ID
+    LEFT JOIN Accounts aFrom 
+        ON t.FROM_ACCOUNT_ID = aFrom.ID
+    LEFT JOIN Accounts aTo 
+        ON t.TO_ACCOUNT_ID = aTo.ID
+    LEFT JOIN CreditCardCapTransactions cct 
+        ON t.ID = cct.TRANSACTION_ID
+    WHERE t.TRANSCATION_TYPE IN (?, ?, ?)
+      AND t.DATE BETWEEN ? AND ?
+    ORDER BY t.DATE DESC;
     `;
+
+    console.log("Executing SQL to fetch all transactions ", sql);
 
     const transactions = await query<{
       ID: number;
@@ -88,6 +96,7 @@ async function fetchAllTransactionsFromDB({
       TO_ACCOUNT_ID: number;
       FROM_ACCOUNT_NAME: string;
       TO_ACCOUNT_NAME: string;
+      CAP_ID: number | null;
     }>(sql, [TransactionType.EXPENSE, TransactionType.INCOME, TransactionType.INVESTMENT, fromTimestamp, toTimestamp]);
 
     console.log(`Fetched ${transactions.length} total transactions`);
@@ -139,6 +148,7 @@ async function fetchAllTransactionsFromDB({
           subCategoryId: tx.SUB_CATEGORY_ID?.toString() || '',
           investmentAccountId,
           investmentAccountName,
+          capId: tx.CAP_ID?.toString() || undefined,
         };
       });
   } catch (error) {

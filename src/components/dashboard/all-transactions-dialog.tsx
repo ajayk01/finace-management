@@ -56,7 +56,9 @@ import { format, parse } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { transaction } from '@/lib/db';
-
+import { AddExpenseDialog } from './add-expense-dialog';
+import { AddIncomeDialog } from './add-income-dialog';
+import { AddInvestmentDialog } from './add-investment-dialog';
 interface Transaction {
   id: string;
   date: string | null;
@@ -71,6 +73,13 @@ interface Transaction {
   subCategoryId?: string;
   investmentAccountId?: string;
   investmentAccountName?: string;
+  // Splitwise fields
+  splitwiseGroupId?: string;
+  splitwiseGroupName?: string;
+  splitwiseUserIds?: string[];
+  splitType?: 'equal' | 'custom';
+  customAmounts?: Record<string, number>;
+  capId?: string;
 }
 
 interface Category {
@@ -105,32 +114,6 @@ interface AllTransactionsDialogProps {
   creditCards: Account[];
 }
 
-const expenseFormSchema = z.object({
-  amount: z.string().min(1, 'Amount is required'),
-  category: z.string().min(1, 'Category is required'),
-  subCategory: z.string().optional(),
-  account: z.string().min(1, 'Account is required'),
-  date: z.date(),
-  description: z.string().optional(),
-});
-
-const incomeFormSchema = z.object({
-  amount: z.string().min(1, 'Amount is required'),
-  category: z.string().min(1, 'Category is required'),
-  subCategory: z.string().optional(),
-  account: z.string().min(1, 'Account is required'),
-  date: z.date(),
-  description: z.string().optional(),
-});
-
-const investmentFormSchema = z.object({
-  amount: z.string().min(1, 'Amount is required'),
-  investmentAccount: z.string().min(1, 'Investment account is required'),
-  account: z.string().min(1, 'Account is required'),
-  date: z.date(),
-  description: z.string().optional(),
-});
-
 export function AllTransactionsDialog({
   open,
   onOpenChange,
@@ -163,40 +146,23 @@ export function AllTransactionsDialog({
     ...creditCards.map(card => ({ ...card, type: "Credit Card" as const }))
   ];
 
-  const expenseForm = useForm<z.infer<typeof expenseFormSchema>>({
-    resolver: zodResolver(expenseFormSchema),
-    defaultValues: {
-      amount: '',
-      category: '',
-      subCategory: '',
-      account: '',
-      date: new Date(),
-      description: '',
-    },
-  });
+  // State for AddExpenseDialog
+  const [isExpenseEditDialogOpen, setIsExpenseEditDialogOpen] = useState(false);
+  const [editingExpenseData, setEditingExpenseData] = useState<Transaction | null>(null);
+  const [isDuplicatingExpense, setIsDuplicatingExpense] = useState(false);
+  const [duplicatingExpenseData, setDuplicatingExpenseData] = useState<Transaction | null>(null);
 
-  const incomeForm = useForm<z.infer<typeof incomeFormSchema>>({
-    resolver: zodResolver(incomeFormSchema),
-    defaultValues: {
-      amount: '',
-      category: '',
-      subCategory: '',
-      account: '',
-      date: new Date(),
-      description: '',
-    },
-  });
+  // State for AddIncomeDialog
+  const [isIncomeEditDialogOpen, setIsIncomeEditDialogOpen] = useState(false);
+  const [editingIncomeData, setEditingIncomeData] = useState<Transaction | null>(null);
+  const [isDuplicatingIncome, setIsDuplicatingIncome] = useState(false);
+  const [duplicatingIncomeData, setDuplicatingIncomeData] = useState<Transaction | null>(null);
 
-  const investmentForm = useForm<z.infer<typeof investmentFormSchema>>({
-    resolver: zodResolver(investmentFormSchema),
-    defaultValues: {
-      amount: '',
-      investmentAccount: '',
-      account: '',
-      date: new Date(),
-      description: '',
-    },
-  });
+  // State for AddInvestmentDialog
+  const [isInvestmentEditDialogOpen, setIsInvestmentEditDialogOpen] = useState(false);
+  const [editingInvestmentData, setEditingInvestmentData] = useState<Transaction | null>(null);
+  const [isDuplicatingInvestment, setIsDuplicatingInvestment] = useState(false);
+  const [duplicatingInvestmentData, setDuplicatingInvestmentData] = useState<Transaction | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -253,45 +219,21 @@ export function AllTransactionsDialog({
     
     console.log('Editing transaction:', transaction);
     console.log('Investment Account ID:', transaction.investmentAccountId);
+    console.log('Splitwise Group ID:', transaction.splitwiseGroupId);
+    console.log('Splitwise Users:', transaction.splitwiseUserIds);
     
     if (transaction.type === 'Expense') {
-      expenseForm.reset({
-        amount: transaction.amount.toString(),
-        category: transaction.categoryId || '',
-        subCategory: transaction.subCategoryId || '',
-        account: transaction.accountId || '',
-        date: transaction.date ? parse(transaction.date, 'yyyy-MM-dd', new Date()) : new Date(),
-        description: transaction.description,
-      });
+      setEditingExpenseData(transaction);
+      setIsExpenseEditDialogOpen(true);
+      return;
     } else if (transaction.type === 'Income') {
-      incomeForm.reset({
-        amount: transaction.amount.toString(),
-        category: transaction.categoryId || '',
-        subCategory: transaction.subCategoryId || '',
-        account: transaction.accountId || '',
-        date: transaction.date ? parse(transaction.date, 'yyyy-MM-dd', new Date()) : new Date(),
-        description: transaction.description,
-      });
+      setEditingIncomeData(transaction);
+      setIsIncomeEditDialogOpen(true);
+      return;
     } else if (transaction.type === 'Investment') {
-      console.log("Investment Accounts Array:", investmentAccounts);
-      console.log("Looking for ID:", transaction.investmentAccountId);
-      console.log("ID exists in array?", investmentAccounts.some(acc => acc.id === transaction.investmentAccountId));
-      
-      const formData = {
-        amount: transaction.amount.toString(),
-        investmentAccount: transaction.investmentAccountId || '',
-        account: transaction.accountId || '',
-        date: transaction.date ? parse(transaction.date, 'yyyy-MM-dd', new Date()) : new Date(),
-        description: transaction.description,
-      };
-      console.log("Form data being set:", formData);
-      
-      investmentForm.reset(formData);
-      
-      // Log form value after reset
-      setTimeout(() => {
-        console.log("Form value after reset:", investmentForm.getValues('investmentAccount'));
-      }, 100);
+      setEditingInvestmentData(transaction);
+      setIsInvestmentEditDialogOpen(true);
+      return;
     }
     
     setIsEditDialogOpen(true);
@@ -304,31 +246,17 @@ export function AllTransactionsDialog({
     console.log('Investment Account ID:', transaction.investmentAccountId);
     
     if (transaction.type === 'Expense') {
-      expenseForm.reset({
-        amount: transaction.amount.toString(),
-        category: transaction.categoryId || '',
-        subCategory: transaction.subCategoryId || '',
-        account: transaction.accountId || '',
-        date: new Date(),
-        description: transaction.description,
-      });
+      setDuplicatingExpenseData(transaction);
+      setIsDuplicatingExpense(true);
+      return;
     } else if (transaction.type === 'Income') {
-      incomeForm.reset({
-        amount: transaction.amount.toString(),
-        category: transaction.categoryId || '',
-        subCategory: transaction.subCategoryId || '',
-        account: transaction.accountId || '',
-        date: new Date(),
-        description: transaction.description,
-      });
+      setDuplicatingIncomeData(transaction);
+      setIsDuplicatingIncome(true);
+      return;
     } else if (transaction.type === 'Investment') {
-      investmentForm.reset({
-        amount: transaction.amount.toString(),
-        investmentAccount: transaction.investmentAccountId || '',
-        account: transaction.accountId || '',
-        date: new Date(),
-        description: transaction.description,
-      });
+      setDuplicatingInvestmentData(transaction);
+      setIsDuplicatingInvestment(true);
+      return;
     }
     
     setIsDuplicatePreviewOpen(true);
@@ -387,16 +315,8 @@ export function AllTransactionsDialog({
       let payload: any = {};
 
       if (selectedTransaction.type === 'Expense') {
-        apiEndpoint = '/api/add-expense';
-        payload = {
-          id: selectedTransaction.id,
-          amount: parseFloat(values.amount),
-          categoryId: values.category,
-          subCategoryId: values.subCategory,
-          accountId: values.account,
-          date: format(values.date, 'yyyy-MM-dd'),
-          description: values.description,
-        };
+        // This branch is no longer used as expense editing is handled by AddExpenseDialog
+        return;
       } else if (selectedTransaction.type === 'Income') {
         apiEndpoint = '/api/add-income';
         payload = {
@@ -539,6 +459,48 @@ export function AllTransactionsDialog({
     }
   };
 
+  // Handler for expense edits via AddExpenseDialog
+  const handleExpenseUpdated = async () => {
+    await fetchTransactions();
+    onTransactionUpdated?.();
+    setIsExpenseEditDialogOpen(false);
+    setEditingExpenseData(null);
+    setIsDuplicatingExpense(false);
+    setDuplicatingExpenseData(null);
+    toast({
+      title: "Success",
+      description: isDuplicatingExpense ? "Expense duplicated successfully" : "Expense updated successfully",
+    });
+  };
+
+  // Handler for income edits via AddIncomeDialog
+  const handleIncomeUpdated = async () => {
+    await fetchTransactions();
+    onTransactionUpdated?.();
+    setIsIncomeEditDialogOpen(false);
+    setEditingIncomeData(null);
+    setIsDuplicatingIncome(false);
+    setDuplicatingIncomeData(null);
+    toast({
+      title: "Success",
+      description: isDuplicatingIncome ? "Income duplicated successfully" : "Income updated successfully",
+    });
+  };
+
+  // Handler for investment edits via AddInvestmentDialog
+  const handleInvestmentUpdated = async () => {
+    await fetchTransactions();
+    onTransactionUpdated?.();
+    setIsInvestmentEditDialogOpen(false);
+    setEditingInvestmentData(null);
+    setIsDuplicatingInvestment(false);
+    setDuplicatingInvestmentData(null);
+    toast({
+      title: "Success",
+      description: isDuplicatingInvestment ? "Investment duplicated successfully" : "Investment updated successfully",
+    });
+  };
+
   const getTypeBadgeVariant = (type: string) => {
     switch (type) {
       case 'Income':
@@ -553,977 +515,19 @@ export function AllTransactionsDialog({
   };
 
   const renderEditForm = () => {
-    if (!selectedTransaction) return null;
-
-    if (selectedTransaction.type === 'Expense') {
-      const categories = expenseCategories;
-      const selectedCategoryId = expenseForm.watch('category');
-      const filteredSubCategories = expenseSubCategories.filter(
-        sub => sub.categoryId === selectedCategoryId
-      );
-
-      return (
-        <Form {...expenseForm}>
-          <form onSubmit={expenseForm.handleSubmit(handleSaveEdit)} className="space-y-4">
-            <FormField
-              control={expenseForm.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Amount</FormLabel>
-                  <FormControl>
-                    <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={expenseForm.control}
-              name="category"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Category</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {filteredSubCategories.length > 0 && (
-              <FormField
-                control={expenseForm.control}
-                name="subCategory"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Sub-category</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select sub-category" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {filteredSubCategories.map((sub) => (
-                          <SelectItem key={sub.id} value={sub.id}>
-                            {sub.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-            <FormField
-              control={expenseForm.control}
-              name="account"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Account</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select account" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {combinedAccounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.name} ({acc.type})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={expenseForm.control}
-              name="date"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        >
-                          {field.value ? (
-                            format(field.value, "PPP")
-                          ) : (
-                            <span>Pick a date</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) =>
-                          date > new Date() || date < new Date("1900-01-01")
-                        }
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={expenseForm.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter description" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsEditDialogOpen(false)}
-                disabled={isSaving}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Changes
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      );
-    } else if (selectedTransaction.type === 'Income') {
-      const categories = incomeCategories;
-      const selectedCategoryId = incomeForm.watch('category');
-      const filteredSubCategories = incomeSubCategories.filter(
-        sub => sub.categoryId === selectedCategoryId
-      );
-
-      return (
-        <Form {...incomeForm}>
-          <form onSubmit={incomeForm.handleSubmit(handleSaveEdit)} className="space-y-4">
-            <FormField
-              control={incomeForm.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Amount</FormLabel>
-                  <FormControl>
-                    <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={incomeForm.control}
-              name="category"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Category</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {filteredSubCategories.length > 0 && (
-              <FormField
-                control={incomeForm.control}
-                name="subCategory"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Sub-category</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select sub-category" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {filteredSubCategories.map((sub) => (
-                          <SelectItem key={sub.id} value={sub.id}>
-                            {sub.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-            <FormField
-              control={incomeForm.control}
-              name="account"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Account</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select account" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {combinedAccounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.name} ({acc.type})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={incomeForm.control}
-              name="date"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        >
-                          {field.value ? (
-                            format(field.value, "PPP")
-                          ) : (
-                            <span>Pick a date</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) =>
-                          date > new Date() || date < new Date("1900-01-01")
-                        }
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={incomeForm.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter description" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsEditDialogOpen(false)}
-                disabled={isSaving}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Changes
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      );
-    } else if (selectedTransaction.type === 'Investment') {
-      return (
-        <Form {...investmentForm}>
-          <form onSubmit={investmentForm.handleSubmit(handleSaveEdit)} className="space-y-4">
-            <FormField
-              control={investmentForm.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Amount</FormLabel>
-                  <FormControl>
-                    <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={investmentForm.control}
-              name="investmentAccount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Investment Account</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select investment account" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {investmentAccounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={investmentForm.control}
-              name="account"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>From Account</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select account" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {bankAccounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={investmentForm.control}
-              name="date"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        >
-                          {field.value ? (
-                            format(field.value, "PPP")
-                          ) : (
-                            <span>Pick a date</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) =>
-                          date > new Date() || date < new Date("1900-01-01")
-                        }
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={investmentForm.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter description" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsEditDialogOpen(false)}
-                disabled={isSaving}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Changes
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      );
-    }
+    // All transaction types now use their own dedicated dialogs
+    // Expenses: AddExpenseDialog
+    // Income: AddIncomeDialog
+    // Investment: AddInvestmentDialog
+    return null;
   };
 
   const renderDuplicateForm = () => {
-    if (!selectedTransaction) return null;
-
-    if (selectedTransaction.type === 'Expense') {
-      const categories = expenseCategories;
-      const selectedCategoryId = expenseForm.watch('category');
-      const filteredSubCategories = expenseSubCategories.filter(
-        sub => sub.categoryId === selectedCategoryId
-      );
-
-      return (
-        <Form {...expenseForm}>
-          <form onSubmit={expenseForm.handleSubmit(handleSaveDuplicate)} className="space-y-4">
-            <div className="bg-muted p-4 rounded-md mb-4">
-              <h4 className="text-sm font-semibold mb-2">Preview & Edit Before Duplicating</h4>
-              <p className="text-sm text-muted-foreground">
-                Review and modify the transaction details before creating a duplicate.
-              </p>
-            </div>
-            <FormField
-              control={expenseForm.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Amount</FormLabel>
-                  <FormControl>
-                    <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={expenseForm.control}
-              name="category"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Category</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {filteredSubCategories.length > 0 && (
-              <FormField
-                control={expenseForm.control}
-                name="subCategory"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Sub-category</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select sub-category" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {filteredSubCategories.map((sub) => (
-                          <SelectItem key={sub.id} value={sub.id}>
-                            {sub.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-            <FormField
-              control={expenseForm.control}
-              name="account"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Account</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select account" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {combinedAccounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.name} ({acc.type})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={expenseForm.control}
-              name="date"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        >
-                          {field.value ? (
-                            format(field.value, "PPP")
-                          ) : (
-                            <span>Pick a date</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) =>
-                          date > new Date() || date < new Date("1900-01-01")
-                        }
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={expenseForm.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter description" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsDuplicatePreviewOpen(false)}
-                disabled={isSaving}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create Duplicate
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      );
-    } else if (selectedTransaction.type === 'Income') {
-      const categories = incomeCategories;
-      const selectedCategoryId = incomeForm.watch('category');
-      const filteredSubCategories = incomeSubCategories.filter(
-        sub => sub.categoryId === selectedCategoryId
-      );
-
-      return (
-        <Form {...incomeForm}>
-          <form onSubmit={incomeForm.handleSubmit(handleSaveDuplicate)} className="space-y-4">
-            <div className="bg-muted p-4 rounded-md mb-4">
-              <h4 className="text-sm font-semibold mb-2">Preview & Edit Before Duplicating</h4>
-              <p className="text-sm text-muted-foreground">
-                Review and modify the transaction details before creating a duplicate.
-              </p>
-            </div>
-            <FormField
-              control={incomeForm.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Amount</FormLabel>
-                  <FormControl>
-                    <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={incomeForm.control}
-              name="category"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Category</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {filteredSubCategories.length > 0 && (
-              <FormField
-                control={incomeForm.control}
-                name="subCategory"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Sub-category</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select sub-category" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {filteredSubCategories.map((sub) => (
-                          <SelectItem key={sub.id} value={sub.id}>
-                            {sub.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-            <FormField
-              control={incomeForm.control}
-              name="account"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Account</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select account" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {combinedAccounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.name} ({acc.type})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={incomeForm.control}
-              name="date"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        >
-                          {field.value ? (
-                            format(field.value, "PPP")
-                          ) : (
-                            <span>Pick a date</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) =>
-                          date > new Date() || date < new Date("1900-01-01")
-                        }
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={incomeForm.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter description" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsDuplicatePreviewOpen(false)}
-                disabled={isSaving}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create Duplicate
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      );
-    } else if (selectedTransaction.type === 'Investment') {
-      return (
-        <Form {...investmentForm}>
-          <form onSubmit={investmentForm.handleSubmit(handleSaveDuplicate)} className="space-y-4">
-            <div className="bg-muted p-4 rounded-md mb-4">
-              <h4 className="text-sm font-semibold mb-2">Preview & Edit Before Duplicating</h4>
-              <p className="text-sm text-muted-foreground">
-                Review and modify the transaction details before creating a duplicate.
-              </p>
-            </div>
-            <FormField
-              control={investmentForm.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Amount</FormLabel>
-                  <FormControl>
-                    <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={investmentForm.control}
-              name="investmentAccount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Investment Account</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select investment account" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {investmentAccounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={investmentForm.control}
-              name="account"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>From Account</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select account" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {bankAccounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={investmentForm.control}
-              name="date"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        >
-                          {field.value ? (
-                            format(field.value, "PPP")
-                          ) : (
-                            <span>Pick a date</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) =>
-                          date > new Date() || date < new Date("1900-01-01")
-                        }
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={investmentForm.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter description" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsDuplicatePreviewOpen(false)}
-                disabled={isSaving}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create Duplicate
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      );
-    }
+    // All transaction types now use their own dedicated dialogs
+    // Expenses: AddExpenseDialog
+    // Income: AddIncomeDialog
+    // Investment: AddInvestmentDialog
+    return null;
   };
 
   return (
@@ -1743,6 +747,212 @@ export function AllTransactionsDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* AddExpenseDialog for editing expenses */}
+      {editingExpenseData && (
+        <AddExpenseDialog
+          open={isExpenseEditDialogOpen}
+          onOpenChange={(open) => {
+            setIsExpenseEditDialogOpen(open);
+            if (!open) {
+              setEditingExpenseData(null);
+            }
+          }}
+          categories={expenseCategories.map(cat => ({ id: cat.id, name: cat.name }))}
+          subCategories={expenseSubCategories.map(sub => ({ 
+            id: sub.id, 
+            name: sub.name, 
+            categoryId: sub.categoryId 
+          }))}
+          accounts={combinedAccounts.map(acc => ({
+            id: acc.id,
+            name: acc.name,
+            type: acc.type,
+            balance: acc.balance,
+            usedAmount: acc.usedAmount,
+            totalLimit: acc.totalLimit
+          }))}
+          onExpenseAdded={handleExpenseUpdated}
+          editTransactionId={editingExpenseData.id}
+          initialValues={{
+            amount: editingExpenseData.amount,
+            date: editingExpenseData.date ? parse(editingExpenseData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            description: editingExpenseData.description,
+            accountId: editingExpenseData.accountId || '',
+            categoryId: editingExpenseData.categoryId || '',
+            subCategoryId: editingExpenseData.subCategoryId || '',
+            capId: editingExpenseData.capId || undefined,
+            includeSplitwise: !!editingExpenseData.splitwiseGroupId,
+            splitwiseGroupId: editingExpenseData.splitwiseGroupId || '',
+            splitwiseUserIds: editingExpenseData.splitwiseUserIds || [],
+            splitType: editingExpenseData.splitType || 'equal',
+            customAmounts: editingExpenseData.customAmounts || {},
+          }}
+        />
+      )}
+
+      {/* AddExpenseDialog for duplicating expenses */}
+      {duplicatingExpenseData && (
+        <AddExpenseDialog
+          open={isDuplicatingExpense}
+          onOpenChange={(open) => {
+            setIsDuplicatingExpense(open);
+            if (!open) {
+              setDuplicatingExpenseData(null);
+            }
+          }}
+          categories={expenseCategories.map(cat => ({ id: cat.id, name: cat.name }))}
+          subCategories={expenseSubCategories.map(sub => ({ 
+            id: sub.id, 
+            name: sub.name, 
+            categoryId: sub.categoryId 
+          }))}
+          accounts={combinedAccounts.map(acc => ({
+            id: acc.id,
+            name: acc.name,
+            type: acc.type,
+            balance: acc.balance,
+            usedAmount: acc.usedAmount,
+            totalLimit: acc.totalLimit
+          }))}
+          onExpenseAdded={handleExpenseUpdated}
+          initialValues={{
+            amount: duplicatingExpenseData.amount,
+            date: new Date(), // Use current date for duplication
+            description: duplicatingExpenseData.description,
+            accountId: duplicatingExpenseData.accountId || '',
+            categoryId: duplicatingExpenseData.categoryId || '',
+            subCategoryId: duplicatingExpenseData.subCategoryId || '',
+            includeSplitwise: false,
+            splitwiseGroupId: '',
+            splitwiseUserIds: [],
+            splitType: 'equal',
+            customAmounts: {},
+          }}
+        />
+      )}
+
+      {/* AddIncomeDialog for editing income */}
+      {editingIncomeData && (
+        <AddIncomeDialog
+          open={isIncomeEditDialogOpen}
+          onOpenChange={(open) => {
+            setIsIncomeEditDialogOpen(open);
+            if (!open) {
+              setEditingIncomeData(null);
+            }
+          }}
+          categories={incomeCategories.map(cat => ({ id: cat.id, name: cat.name }))}
+          subCategories={incomeSubCategories.map(sub => ({ 
+            id: sub.id, 
+            name: sub.name, 
+            categoryId: sub.categoryId 
+          }))}
+          accounts={combinedAccounts.map(acc => ({
+            id: acc.id,
+            name: acc.name,
+            type: acc.type
+          }))}
+          onIncomeAdded={handleIncomeUpdated}
+          editTransactionId={editingIncomeData.id}
+          initialValues={{
+            amount: editingIncomeData.amount,
+            date: editingIncomeData.date ? parse(editingIncomeData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            description: editingIncomeData.description,
+            accountId: editingIncomeData.accountId || '',
+            categoryId: editingIncomeData.categoryId || '',
+            subCategoryId: editingIncomeData.subCategoryId || '',
+          }}
+        />
+      )}
+
+      {/* AddIncomeDialog for duplicating income */}
+      {duplicatingIncomeData && (
+        <AddIncomeDialog
+          open={isDuplicatingIncome}
+          onOpenChange={(open) => {
+            setIsDuplicatingIncome(open);
+            if (!open) {
+              setDuplicatingIncomeData(null);
+            }
+          }}
+          categories={incomeCategories.map(cat => ({ id: cat.id, name: cat.name }))}
+          subCategories={incomeSubCategories.map(sub => ({ 
+            id: sub.id, 
+            name: sub.name, 
+            categoryId: sub.categoryId 
+          }))}
+          accounts={combinedAccounts.map(acc => ({
+            id: acc.id,
+            name: acc.name,
+            type: acc.type
+          }))}
+          onIncomeAdded={handleIncomeUpdated}
+          initialValues={{
+            amount: duplicatingIncomeData.amount,
+            date: new Date(), // Use current date for duplication
+            description: duplicatingIncomeData.description,
+            accountId: duplicatingIncomeData.accountId || '',
+            categoryId: duplicatingIncomeData.categoryId || '',
+            subCategoryId: duplicatingIncomeData.subCategoryId || '',
+          }}
+        />
+      )}
+
+      {/* AddInvestmentDialog for editing investment */}
+      {editingInvestmentData && (
+        <AddInvestmentDialog
+          open={isInvestmentEditDialogOpen}
+          onOpenChange={(open) => {
+            setIsInvestmentEditDialogOpen(open);
+            if (!open) {
+              setEditingInvestmentData(null);
+            }
+          }}
+          investmentCategories={investmentAccounts.map(acc => ({ id: acc.id, name: acc.name }))}
+          accounts={bankAccounts.map(acc => ({
+            id: acc.id,
+            name: acc.name,
+            type: 'Bank' as const
+          }))}
+          onInvestmentAdded={handleInvestmentUpdated}
+          editTransactionId={editingInvestmentData.id}
+          initialValues={{
+            amount: editingInvestmentData.amount,
+            date: editingInvestmentData.date ? parse(editingInvestmentData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            description: editingInvestmentData.description,
+            accountId: editingInvestmentData.accountId || '',
+            investmentCategoryId: editingInvestmentData.investmentAccountId || '',
+          }}
+        />
+      )}
+
+      {/* AddInvestmentDialog for duplicating investment */}
+      {duplicatingInvestmentData && (
+        <AddInvestmentDialog
+          open={isDuplicatingInvestment}
+          onOpenChange={(open) => {
+            setIsDuplicatingInvestment(open);
+            if (!open) {
+              setDuplicatingInvestmentData(null);
+            }
+          }}
+          investmentCategories={investmentAccounts.map(acc => ({ id: acc.id, name: acc.name }))}
+          accounts={bankAccounts.map(acc => ({
+            id: acc.id,
+            name: acc.name,
+            type: 'Bank' as const
+          }))}
+          onInvestmentAdded={handleInvestmentUpdated}
+          initialValues={{
+            amount: duplicatingInvestmentData.amount,
+            date: new Date(), // Use current date for duplication
+            description: duplicatingInvestmentData.description,
+            accountId: duplicatingInvestmentData.accountId || '',
+            investmentCategoryId: duplicatingInvestmentData.investmentAccountId || '',
+          }}
+        />
+      )}
     </>
   );
 }

@@ -71,3 +71,19 @@ export interface CreditCardDetails {
   CLOSED_DATE: number;
   CURRENT_REWARD_POINTS: number;
 }
+
+export interface CreditCardCapDetails {
+  ID: number;
+  CREDIT_CARD_ID: number;
+  CAP_NAME: string;
+  CAP_TOTAL_AMOUNT: number;
+  CAP_PERCENTAGE: number;
+  CAP_CURRENT_AMOUNT: number;
+}
+
+export interface CreditCardCapTransactions {
+  TRANSACTION_ID: number;
+  CREDIT_CARD_ID: number;
+  CAP_ID: number;
+  AMOUNT: number;
+}

@@ -23,6 +23,7 @@ interface StatCardProps {
   creditCardName?: string;
   usedAmountText?: string;
   totalLimitText?: string;
+  onViewCaps?: () => void;
 }
 
 export function StatCard(props: StatCardProps) {
@@ -43,6 +44,7 @@ export function StatCard(props: StatCardProps) {
     creditCardName,
     usedAmountText,
     totalLimitText,
+    onViewCaps,
   } = props;
 
   const CreditCardLogoIconComponent = CreditCardLogoIconComponentFromProp || DefaultCreditCardIcon;
@@ -85,11 +87,18 @@ export function StatCard(props: StatCardProps) {
                           />}
                 {creditCardName && <h3 className="text-lg font-semibold text-foreground">{creditCardName}</h3>}
             </div>
-             {onViewTransactions && (
-              <Button variant="outline" size="sm" onClick={onViewTransactions}>
-                View Trans
-              </Button>
-            )}
+            <div className="flex gap-2">
+              {onViewCaps && (
+                <Button variant="outline" size="sm" onClick={onViewCaps}>
+                  View Caps
+                </Button>
+              )}
+              {onViewTransactions && (
+                <Button variant="outline" size="sm" onClick={onViewTransactions}>
+                  View Trans
+                </Button>
+              )}
+            </div>
           </div>
           <div className="flex-grow">
             {usedAmountText && (

@@ -63,17 +63,20 @@ interface AddInvestmentDialogProps {
   investmentCategories: InvestmentCategory[];
   accounts: Account[];
   onInvestmentAdded: (newInvestment: Transaction, fromAccountId: string) => void;
+  editTransactionId?: string;
+  initialValues?: Partial<InvestmentFormValues>;
 }
 
 export type InvestmentFormValues = z.infer<typeof investmentSchema>;
 
-export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, accounts, onInvestmentAdded }: AddInvestmentDialogProps) {
+export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, accounts, onInvestmentAdded, editTransactionId, initialValues }: AddInvestmentDialogProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const isEditMode = !!editTransactionId;
 
   const form = useForm<InvestmentFormValues>({
     resolver: zodResolver(investmentSchema),
-    defaultValues: {
+    defaultValues: initialValues || {
       amount: 0,
       description: '',
       accountId: '',
@@ -101,20 +104,20 @@ export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, 
     };
 
     try {
-      const response = await fetch('/api/add-investment', {
-        method: 'POST',
+      const response = await fetch(isEditMode ? '/api/all-transactions' : '/api/add-investment', {
+        method: isEditMode ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(isEditMode ? { id: editTransactionId, ...payload } : payload),
       });
 
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to add investment.');
+        throw new Error(result.error || `Failed to ${isEditMode ? 'update' : 'add'} investment.`);
       }
 
       toast({
-        title: 'Investment Added',
-        description: `The investment "${values.description}" has been successfully recorded.`,
+        title: isEditMode ? 'Investment Updated' : 'Investment Added',
+        description: `The investment "${values.description}" has been successfully ${isEditMode ? 'updated' : 'recorded'}.`,
       });
 
       const categoryName = investmentCategories.find(c => c.id === values.investmentCategoryId)?.name || 'N/A';
@@ -147,9 +150,9 @@ export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, 
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add New Investment</DialogTitle>
+          <DialogTitle>{isEditMode ? 'Edit Investment' : 'Add New Investment'}</DialogTitle>
           <DialogDescription>
-            Fill in the details below to record a new investment.
+            {isEditMode ? 'Update the details of your investment.' : 'Fill in the details below to record a new investment.'}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -271,7 +274,7 @@ export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={handleClose}>Cancel</Button>
               <Button type="submit" disabled={isLoading}>
-                {isLoading ? 'Adding...' : 'Add Investment'}
+                {isLoading ? (isEditMode ? 'Updating...' : 'Adding...') : (isEditMode ? 'Update Investment' : 'Add Investment')}
               </Button>
             </DialogFooter>
           </form>

@@ -227,6 +227,44 @@ async function createSplitwiseTransaction({
     console.log(`✅ Created Splitwise transaction for friend ${friendId}, amount: ${amount}`);
 }
 
+/**
+ * Create Credit Card Cap Transaction and update cap current amount
+ */
+async function createCreditCardCapTransaction({
+    transactionId,
+    creditCardId,
+    capId,
+    amount,
+}: {
+    transactionId: number;
+    creditCardId: string;
+    capId: string;
+    amount: number;
+}): Promise<void> {
+    try {
+        // Insert cap transaction
+        const insertSql = `
+            INSERT INTO CreditCardCapTransactions (
+                TRANSACTION_ID,
+                CREDIT_CARD_ID,
+                CAP_ID,
+                AMOUNT
+            ) VALUES (?, ?, ?, ?)
+        `;
+        
+        await query(insertSql, [
+            transactionId,
+            parseInt(creditCardId),
+            parseInt(capId),
+            amount
+        ]);        
+        console.log(`✅ Created credit card cap transaction for cap ${capId}, amount: ${amount}`);
+    } catch (error) {
+        console.error('❌ Error creating credit card cap transaction:', error);
+        throw error;
+    }
+}
+
 const addExpenseSchema = z.object({
   amount: z.number(),
   date: z.string(), // ISO date string
@@ -237,6 +275,7 @@ const addExpenseSchema = z.object({
   }),
   categoryId: z.string(),
   subCategoryId: z.string().optional(),
+  capId: z.string().optional(), // Credit card cap ID
   includeSplitwise: z.boolean().optional(),
   splitwiseGroupId: z.string().optional(),
   splitwiseUserIds: z.array(z.string()).optional(),
@@ -255,7 +294,7 @@ export async function POST(request: NextRequest)
         const body = await request.json();
         const parsedData = addExpenseSchema.parse(body);
 
-        let { amount, date, description, account, categoryId, subCategoryId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId, splitType, customAmounts } = parsedData;
+        let { amount, date, description, account, categoryId, subCategoryId, capId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId, splitType, customAmounts } = parsedData;
         let splitAmt: number = 0;
         console.log("customAmounts received:", customAmounts);
         console.log("splitType:", splitType);
@@ -371,6 +410,16 @@ export async function POST(request: NextRequest)
                 console.log('✅ Created regular expense transaction');
             }
             
+            // Create credit card cap transaction if capId is provided and account is credit card
+            if (capId && account.type === 'Credit Card') {
+                await createCreditCardCapTransaction({
+                    transactionId,
+                    creditCardId: account.id,
+                    capId,
+                    amount
+                });
+            }
+            
             return { transactionId, splitwiseTransactionId };
         });
 
@@ -399,16 +448,20 @@ const updateExpenseSchema = z.object({
   amount: z.number(),
   date: z.string(),
   description: z.string().optional(),
-  accountId: z.string(),
+  account: z.object({
+      id: z.string(),
+      type: z.enum(['Bank', 'Credit Card']),
+  }),
   categoryId: z.string(),
   subCategoryId: z.string().optional(),
+  capId: z.string().optional(), // Credit card cap ID for updates
 });
 
 export async function PUT(request: NextRequest) {
     try {
         const body = await request.json();
         const parsedData = updateExpenseSchema.parse(body);
-        const { id, amount, date, description, accountId, categoryId, subCategoryId } = parsedData;
+        const { id, amount, date, description, account, categoryId, subCategoryId, capId } = parsedData;
 
         const epochTime = new Date(date).getTime();
 
@@ -427,13 +480,45 @@ export async function PUT(request: NextRequest) {
             epochTime,
             description || '',
             amount,
-            parseInt(accountId),
+            parseInt(account.id),
             parseInt(categoryId),
             subCategoryId ? parseInt(subCategoryId) : null,
             parseInt(id),
             TransactionType.EXPENSE
         ]);
-
+        
+        // Handle credit card cap transaction for updates
+        if (account.type === 'Credit Card') {
+            // First, get the old cap transaction details before deleting
+            const oldCapSql = `
+                SELECT CAP_ID, AMOUNT 
+                FROM CreditCardCapTransactions 
+                WHERE TRANSACTION_ID = ?
+            `;
+            const oldCapTransactions = await query<any>(oldCapSql, [parseInt(id)]);
+            
+            // Revert the old cap amount
+            if (oldCapTransactions && oldCapTransactions.length > 0) {
+                
+                // Delete the old cap transaction
+                const deleteSql = `
+                    DELETE FROM CreditCardCapTransactions 
+                    WHERE TRANSACTION_ID = ?
+                `;
+                await query(deleteSql, [parseInt(id)]);
+            }
+            
+            // Now create new cap transaction if capId is provided
+            if (capId) {
+                await createCreditCardCapTransaction({
+                    transactionId: parseInt(id),
+                    creditCardId: account.id,
+                    capId,
+                    amount
+                });
+            }
+        }
+        
         return NextResponse.json({ 
             success: true, 
             message: 'Expense updated successfully.'

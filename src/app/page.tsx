@@ -14,6 +14,7 @@ import type { Category, SubCategory, Account } from "@/components/dashboard/add-
 import type { InvestmentCategory } from "@/components/dashboard/add-investment-dialog";
 import { SplitwiseDialog } from "@/components/dashboard/splitwise-dialog";
 import type { FriendBalance } from "@/components/dashboard/splitwise-dialog";
+import { ViewCapsDialog } from "@/components/dashboard/view-caps-dialog";
 
 
 const monthOptions = [
@@ -202,6 +203,10 @@ export default function DashboardPage() {
   
   // State for All Transactions dialog
   const [isAllTransactionsDialogOpen, setIsAllTransactionsDialogOpen] = useState(false);
+  
+  // State for View Caps dialog
+  const [isViewCapsDialogOpen, setIsViewCapsDialogOpen] = useState(false);
+  const [selectedCreditCardForCaps, setSelectedCreditCardForCaps] = useState<{id: string, name: string} | null>(null);
   
   const availableYears = useMemo(() => getAvailableYears(), []);
   
@@ -645,6 +650,11 @@ export default function DashboardPage() {
     }
   };
 
+  const handleViewCaps = (card: CreditCardAccount) => {
+    setSelectedCreditCardForCaps({ id: card.id, name: card.name });
+    setIsViewCapsDialogOpen(true);
+  };
+
   const handleViewMonthlyTransactions = (
     title: string,
     sourceData: Transaction[],
@@ -820,7 +830,15 @@ export default function DashboardPage() {
               {!isCreditCardDetailsLoading && !creditCardDetailsError && apiCreditCards.length > 0 && (
                 <div className="grid gap-4 md:grid-cols-2">
                   {apiCreditCards.map((card) => (
-                    <StatCard key={card.id} creditCardLogoIcon={card.logo} creditCardName={card.name} usedAmountText={`Used : ${card.usedAmount.toLocaleString('en-IN')}`} totalLimitText={`Total Limit : ${card.totalLimit.toLocaleString('en-IN')}`} onViewTransactions={() => handleViewCreditCardTransactions(card)} />
+                    <StatCard 
+                      key={card.id} 
+                      creditCardLogoIcon={card.logo} 
+                      creditCardName={card.name} 
+                      usedAmountText={`Used : ${card.usedAmount.toLocaleString('en-IN')}`} 
+                      totalLimitText={`Total Limit : ${card.totalLimit.toLocaleString('en-IN')}`} 
+                      onViewTransactions={() => handleViewCreditCardTransactions(card)} 
+                      onViewCaps={() => handleViewCaps(card)}
+                    />
                   ))}
                 </div>
               )}
@@ -1038,6 +1056,13 @@ export default function DashboardPage() {
           usedAmount: card.usedAmount,
           totalLimit: card.totalLimit
         }))}
+      />
+
+      <ViewCapsDialog
+        open={isViewCapsDialogOpen}
+        onOpenChange={setIsViewCapsDialogOpen}
+        creditCardId={selectedCreditCardForCaps?.id || ''}
+        creditCardName={selectedCreditCardForCaps?.name || ''}
       />
     </div>
   );
