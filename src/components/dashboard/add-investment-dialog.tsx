@@ -43,7 +43,7 @@ const investmentSchema = z.object({
   date: z.date({ required_error: 'A date is required.' }),
   description: z.string().min(1, 'Description is required.'),
   accountId: z.string().min(1, 'Please select a source account.'),
-  investmentCategoryId: z.string().min(1, 'Please select an investment category.'),
+  investmentAccountId: z.string().min(1, 'Please select an investment category.'),
 });
 
 export interface InvestmentCategory {
@@ -80,7 +80,7 @@ export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, 
       amount: 0,
       description: '',
       accountId: '',
-      investmentCategoryId: '',
+      investmentAccountId: '',
       date: new Date(),
     },
   });
@@ -100,7 +100,7 @@ export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, 
       date: format(values.date, 'yyyy-MM-dd'),
       description: values.description,
       accountId: values.accountId,
-      investmentCategoryId: values.investmentCategoryId,
+      investmentAccountId: values.investmentAccountId,
     };
 
     try {
@@ -120,7 +120,7 @@ export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, 
         description: `The investment "${values.description}" has been successfully ${isEditMode ? 'updated' : 'recorded'}.`,
       });
 
-      const categoryName = investmentCategories.find(c => c.id === values.investmentCategoryId)?.name || 'N/A';
+      const categoryName = investmentCategories.find(c => c.id === values.investmentAccountId)?.name || 'N/A';
       
       const newTransaction: Transaction = {
         id: `new-investment-${Date.now()}`,
@@ -249,7 +249,7 @@ export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, 
               />
               <FormField
                   control={form.control}
-                  name="investmentCategoryId"
+                  name="investmentAccountId"
                   render={({ field }) => (
                       <FormItem>
                       <FormLabel>Investment Category / Account</FormLabel>

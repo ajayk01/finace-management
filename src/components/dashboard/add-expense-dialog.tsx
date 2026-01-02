@@ -681,18 +681,18 @@ export function AddExpenseDialog({
                   <div className="text-sm space-y-1">
                     <div className="flex justify-between">
                       <span>Total Amount:</span>
-                      <span className="font-medium">₹{totalAmount}</span>
+                      <span className="font-medium">₹{totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Allocated:</span>
-                      <span className="font-medium">₹{totalCustomAmount.toFixed(2)}</span>
+                      <span className="font-medium">₹{totalCustomAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className={cn(
                       "flex justify-between font-medium",
                       isCustomAmountValid ? "text-green-600" : "text-red-600"
                     )}>
                       <span>Remaining:</span>
-                      <span>₹{remainingAmount.toFixed(2)}</span>
+                      <span>₹{remainingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     {!isCustomAmountValid && (
                       <p className="text-red-600 text-xs">
@@ -710,7 +710,7 @@ export function AddExpenseDialog({
             <div className="text-sm text-muted-foreground border rounded-md p-3">
               <div className="flex justify-between">
                 <span>Amount per person:</span>
-                <span className="font-medium">₹{(totalAmount / selectedSplitwiseUsers.length).toFixed(2)}</span>
+                <span className="font-medium">₹{(totalAmount / selectedSplitwiseUsers.length).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             </div>
           )}

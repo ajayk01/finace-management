@@ -8,8 +8,8 @@ const transferSchema = z.object({
   fromAccountId: z.number().positive(),
   toAccountId: z.number().positive(),
   amount: z.number().positive(),
-  date: z.number().positive(), // Epoch timestamp
-  reason: z.string().min(1),
+  date: z.string(),
+  description: z.string().min(1),
 }).refine(
   (data) => data.fromAccountId !== data.toAccountId,
   {
@@ -21,16 +21,17 @@ async function createTransferTransaction(
   fromAccountId: number,
   toAccountId: number,
   amount: number,
-  date: number,
+  date: string,
   reason: string
 ): Promise<number> {
+  const epochTime = new Date(date).getTime();
   const result = await query(
     `INSERT INTO Transactions 
      (AMOUNT, DATE, NOTES, FROM_ACCOUNT_ID, TO_ACCOUNT_ID, TRANSCATION_TYPE) 
      VALUES (?, ?, ?, ?, ?, ?)`,
     [
       amount,
-      date,
+      epochTime,
       reason,
       fromAccountId,
       toAccountId,
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const parsedData = transferSchema.parse(body);
 
-    const { fromAccountId, toAccountId, amount, date, reason } = parsedData;
+    const { fromAccountId, toAccountId, amount, date, description } = parsedData;
 
     // Verify both accounts exist and are bank accounts
     const accountsSql = `
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
       toAccountId,
       amount,
       date,
-      reason
+      description
     );
 
     return NextResponse.json({

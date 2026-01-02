@@ -168,9 +168,28 @@ export async function GET()
         for(const detail of expenseDetails)
         {
             console.log(`Expense ID: ${detail.expenseId}, Date: ${detail.date}, Amount: ₹${detail.amount}, Friend ID: ${detail.friendId}`);
+            
+            // Check if expense already exists
+            const existingExpense = await query(
+                'SELECT SPLITWISE_TRANSACTION_ID FROM SplitwiseTransactions WHERE SPLITWISE_TRANSACTION_ID = ?',
+                [detail.expenseId]
+            );
+            
+            if (existingExpense.length > 0) {
+                console.log(`Duplicate expense ${detail.expenseId} found, skipping...`);
+                continue;
+            }
+            
             // Use parameterized query to avoid SQL injection and proper type handling
             const res = await query('Select ID from SplitwiseFriends where SPLITWISE_FRIEND_ID = ?', [detail.friendId]);
-            const friendId = res.length > 0 ? res[0].ID : 0;
+            const friendId = res.length > 0 ? res[0].ID : NaN;
+            
+            if (isNaN(friendId)) 
+            {
+                console.log(`Friend ID not found for expense ${detail.expenseId} with friend ${detail.friendId}, skipping...`);
+                continue;
+            }
+            
             await query(
                 'INSERT INTO SplitwiseTransactions (SPLITWISE_TRANSACTION_ID, FRIEND_ID, SPLITED_AMOUNT) VALUES (?, ?, ?)',
                 [detail.expenseId, friendId, detail.amount]

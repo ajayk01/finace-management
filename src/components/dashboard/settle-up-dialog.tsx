@@ -300,13 +300,13 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
                         <span className="font-medium">{friend.name}</span>
                         <div className="text-right">
                           <div className="text-sm text-gray-600">
-                            Splitwise: ₹{(Number(friend.splitwiseAmount) || 0).toFixed(2)}
+                            Splitwise: ₹{(Number(friend.splitwiseAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <div className="text-sm text-gray-600">
-                            Notion: ₹{(Number(friend.notionAmount) || 0).toFixed(2)}
+                            Notion: ₹{(Number(friend.notionAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <div className="font-semibold">
-                            Difference: ₹{((Number(friend.splitwiseAmount) || 0) - (Number(friend.notionAmount) || 0)).toFixed(2)}
+                            Difference: ₹{((Number(friend.splitwiseAmount) || 0) - (Number(friend.notionAmount) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </div>
                       </div>
@@ -343,7 +343,7 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
                   {isFetchingUnsettled && <span className="text-sm text-gray-500 ml-2">(Loading...)</span>}
                 </h3>
                 <div className="text-sm text-gray-600">
-                  Total: ₹{unsettledExpenses.reduce((sum, exp) => sum + (Number(exp.splitedAmount) || 0), 0).toFixed(2)}
+                  Total: ₹{unsettledExpenses.reduce((sum, exp) => sum + (Number(exp.splitedAmount) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
               
@@ -369,7 +369,7 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
                             </div>
                             <div className="flex justify-between">
                               <span className="text-sm font-medium text-gray-600">Your Share:</span>
-                              <span className="text-sm font-semibold">₹{(Number(expense.splitedAmount) || 0).toFixed(2)}</span>
+                              <span className="text-sm font-semibold">₹{(Number(expense.splitedAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           </div>
                           
@@ -432,7 +432,7 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
                   {isFetchingTransactions && <span className="text-sm text-gray-500 ml-2">(Loading...)</span>}
                 </h3>
                 <div className="text-sm text-gray-600">
-                  Total: ₹{transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0).toFixed(2)}
+                  Total: ₹{transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
               
@@ -454,7 +454,7 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
                         <TableCell>{transaction.description}</TableCell>
                         <TableCell>{transaction.category}</TableCell>
                         <TableCell>{transaction.subCategory}</TableCell>
-                        <TableCell className="text-right">₹{(Number(transaction.amount) || 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">₹{(Number(transaction.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -480,7 +480,7 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
               const alreadyPaidTotal = transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
               const unsettledTotal = unsettledExpenses.reduce((sum, exp) => sum + (Number(exp.splitedAmount) || 0), 0);
               const amountToSettle = alreadyPaidTotal - unsettledTotal;
-              return `Settle All (₹${amountToSettle.toFixed(2)})`;
+              return `Settle All (₹${amountToSettle.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
             })()}
           </Button>
         </DialogFooter>

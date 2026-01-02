@@ -10,7 +10,7 @@ const addInvestmentSchema = z.object({
   date: z.string(), // ISO date string
   description: z.string(),
   accountId: z.string(), // ID of the bank account it was paid from
-  investmentCategoryId: z.string(), // ID of the investment account it was paid into
+  investmentAccountId: z.string(), // ID of the investment account it was paid into
 });
 
 async function createInvestmentTransaction(
@@ -38,14 +38,14 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const parsedData = addInvestmentSchema.parse(body);
 
-        const { amount, date, description, accountId, investmentCategoryId } = parsedData;
+        const { amount, date, description, accountId, investmentAccountId } = parsedData;
         console.log('Adding investment with data:', parsedData);
         const transactionId = await createInvestmentTransaction(
             amount,
             date,
             description,
             accountId,
-            investmentCategoryId
+            investmentAccountId
         );
 
         return NextResponse.json({ 
@@ -68,7 +68,7 @@ const updateInvestmentSchema = z.object({
   amount: z.number(),
   date: z.string(),
   description: z.string().optional(),
-  fromAccountId: z.string(),
+  accountId: z.string(),
   investmentAccountId: z.string(),
 });
 
@@ -76,7 +76,7 @@ export async function PUT(request: NextRequest) {
     try {
         const body = await request.json();
         const parsedData = updateInvestmentSchema.parse(body);
-        const { id, amount, date, description, fromAccountId, investmentAccountId } = parsedData;
+        const { id, amount, date, description, accountId, investmentAccountId } = parsedData;
 
         const epochTime = new Date(date).getTime();
 
@@ -94,7 +94,7 @@ export async function PUT(request: NextRequest) {
             epochTime,
             description || '',
             amount,
-            parseInt(fromAccountId),
+            parseInt(accountId),
             parseInt(investmentAccountId),
             parseInt(id),
             TransactionType.INVESTMENT

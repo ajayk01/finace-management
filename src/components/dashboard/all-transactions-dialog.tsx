@@ -416,7 +416,7 @@ export function AllTransactionsDialog({
         apiEndpoint = '/api/add-investment';
         payload = {
           amount: parseFloat(values.amount),
-          investmentCategoryId: values.investmentAccount,
+          investmentAccountId: values.investmentAccount,
           accountId: values.account,
           date: format(values.date, 'yyyy-MM-dd'),
           description: values.description,
@@ -658,7 +658,7 @@ export function AllTransactionsDialog({
                           )}
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          ₹{transaction.amount.toFixed(2)}
+                          ₹{transaction.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-center gap-2">
@@ -922,7 +922,7 @@ export function AllTransactionsDialog({
             date: editingInvestmentData.date ? parse(editingInvestmentData.date, 'yyyy-MM-dd', new Date()) : new Date(),
             description: editingInvestmentData.description,
             accountId: editingInvestmentData.accountId || '',
-            investmentCategoryId: editingInvestmentData.investmentAccountId || '',
+            investmentAccountId: editingInvestmentData.investmentAccountId || '',
           }}
         />
       )}
@@ -949,7 +949,7 @@ export function AllTransactionsDialog({
             date: new Date(), // Use current date for duplication
             description: duplicatingInvestmentData.description,
             accountId: duplicatingInvestmentData.accountId || '',
-            investmentCategoryId: duplicatingInvestmentData.investmentAccountId || '',
+            investmentAccountId: duplicatingInvestmentData.investmentAccountId || '',
           }}
         />
       )}

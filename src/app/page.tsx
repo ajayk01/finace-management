@@ -16,6 +16,13 @@ import { SplitwiseDialog } from "@/components/dashboard/splitwise-dialog";
 import type { FriendBalance } from "@/components/dashboard/splitwise-dialog";
 import { ViewCapsDialog } from "@/components/dashboard/view-caps-dialog";
 
+// Helper function to format currency in Indian format
+const formatIndianCurrency = (amount: number): string => {
+  return new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount);
+};
 
 const monthOptions = [
   { value: "jan", label: "January" },
@@ -815,7 +822,7 @@ export default function DashboardPage() {
               {!isBankDetailsLoading && !bankDetailsError && apiBankAccounts.length > 0 && (
                 <div className="grid gap-4 md:grid-cols-2">
                   {apiBankAccounts.slice().sort((a, b) => b.balance - a.balance).map((account) => (
-                    <StatCard key={account.id} logo={account.logo} bankName={account.name} currentBalanceText={`Current Balance : ${account.balance.toLocaleString('en-IN')}`} onViewTransactions={() => handleViewBankTransactions(account)} />
+                    <StatCard key={account.id} logo={account.logo} bankName={account.name} currentBalanceText={`Current Balance : ${formatIndianCurrency(account.balance)}`} onViewTransactions={() => handleViewBankTransactions(account)} />
                   ))}
                 </div>
               )}
@@ -834,8 +841,8 @@ export default function DashboardPage() {
                       key={card.id} 
                       creditCardLogoIcon={card.logo} 
                       creditCardName={card.name} 
-                      usedAmountText={`Used : ${card.usedAmount.toLocaleString('en-IN')}`} 
-                      totalLimitText={`Total Limit : ${card.totalLimit.toLocaleString('en-IN')}`} 
+                      usedAmountText={`Used : ${formatIndianCurrency(card.usedAmount)}`} 
+                      totalLimitText={`Total Limit : ${formatIndianCurrency(card.totalLimit)}`} 
                       onViewTransactions={() => handleViewCreditCardTransactions(card)} 
                       onViewCaps={() => handleViewCaps(card)}
                     />

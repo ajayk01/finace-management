@@ -584,7 +584,7 @@ export function SplitwiseDialog({
                         {isFetchingTransactions && <span className="text-sm text-gray-500 ml-2">(Loading...)</span>}
                       </h3>
                       <div className="text-sm text-gray-600">
-                        Total: ₹{transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0).toFixed(2)}
+                        Total: ₹{transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     </div>
                     

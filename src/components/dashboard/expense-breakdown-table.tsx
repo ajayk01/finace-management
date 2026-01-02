@@ -220,7 +220,7 @@ export function ExpenseBreakdownTable({
                         <TableCell className="font-medium py-3 px-4">{item.category}</TableCell>
                         {showSubCategoryColumn && <TableCell className="py-3 px-4">{item.subCategory}</TableCell>}
                         <TableCell className={cn("text-right py-3 px-4", amountColumnItemTextColorClassName)}>
-                          ₹{parseCurrency(item.expense).toFixed(2)}
+                          ₹{parseCurrency(item.expense).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         {showXirrColumn && (
                           <TableCell className="text-right py-3 px-4">
@@ -256,7 +256,7 @@ export function ExpenseBreakdownTable({
                           <TableCell className="py-2 px-4 font-semibold text-right">{group.categoryName} Total</TableCell>
                         )}
                         <TableCell className={cn("text-right py-2 px-4", categoryTotalTextColorClassName)}>
-                          ₹{group.categoryTotal.toFixed(2)}
+                          ₹{group.categoryTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         {showXirrColumn && <TableCell className="py-2 px-4"></TableCell>}
                       </TableRow>
@@ -276,7 +276,7 @@ export function ExpenseBreakdownTable({
                 <TableRow className="bg-card font-bold text-base">
                   <TableCell colSpan={showSubCategoryColumn ? 2 : 1} className="text-right py-3 px-4">Grand Total</TableCell>
                   <TableCell className={cn("text-right py-3 px-4", grandTotalTextColorClassName)}>
-                    ₹{grandTotal.toFixed(2)}
+                    ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                   {showXirrColumn && <TableCell className="py-3 px-4"></TableCell>}
                 </TableRow>

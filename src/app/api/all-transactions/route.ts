@@ -7,7 +7,7 @@ interface Transaction {
   date: string | null;
   description: string;
   amount: number;
-  type: 'Income' | 'Expense' | 'Investment';
+  type: 'Income' | 'Expense' | 'Investment' | 'Transfer';
   category?: string;
   subCategory?: string;
   accountId?: string;
@@ -75,8 +75,7 @@ async function fetchAllTransactionsFromDB({
         ON t.TO_ACCOUNT_ID = aTo.ID
     LEFT JOIN CreditCardCapTransactions cct 
         ON t.ID = cct.TRANSACTION_ID
-    WHERE t.TRANSCATION_TYPE IN (?, ?, ?)
-      AND t.DATE BETWEEN ? AND ?
+    WHERE t.DATE BETWEEN ? AND ?
     ORDER BY t.DATE DESC;
     `;
 
@@ -97,14 +96,14 @@ async function fetchAllTransactionsFromDB({
       FROM_ACCOUNT_NAME: string;
       TO_ACCOUNT_NAME: string;
       CAP_ID: number | null;
-    }>(sql, [TransactionType.EXPENSE, TransactionType.INCOME, TransactionType.INVESTMENT, fromTimestamp, toTimestamp]);
+    }>(sql, [fromTimestamp, toTimestamp]);
 
     console.log(`Fetched ${transactions.length} total transactions`);
 
     return transactions
       .filter((tx: any) => tx.AMOUNT !== 0)
       .map((tx: any) => {
-        let type: 'Income' | 'Expense' | 'Investment' = 'Expense';
+        let type: 'Income' | 'Expense' | 'Investment' | 'Transfer' = 'Expense';
         let category = '';
         let subCategory = '';
         let accountId = '';
@@ -128,6 +127,14 @@ async function fetchAllTransactionsFromDB({
           type = 'Investment';
           category = tx.TO_ACCOUNT_NAME || 'Uncategorized';
           subCategory = '';
+          accountId = tx.FROM_ACCOUNT_ID?.toString() || '';
+          accountName = tx.FROM_ACCOUNT_NAME || '';
+          investmentAccountId = tx.TO_ACCOUNT_ID?.toString() || '';
+          investmentAccountName = tx.TO_ACCOUNT_NAME || '';
+        } else if (tx.TRANSCATION_TYPE === TransactionType.TRANSFER) {
+          type = 'Transfer';
+          category = tx.FROM_ACCOUNT_NAME || 'Transfer';
+          subCategory = tx.TO_ACCOUNT_NAME || '';
           accountId = tx.FROM_ACCOUNT_ID?.toString() || '';
           accountName = tx.FROM_ACCOUNT_NAME || '';
           investmentAccountId = tx.TO_ACCOUNT_ID?.toString() || '';

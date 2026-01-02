@@ -42,7 +42,7 @@ const transferSchema = z.object({
   amount: z.coerce.number().min(0.01, 'Amount must be greater than 0.'),
   fromAccountId: z.string().min(1, 'Please select a source account.'),
   toAccountId: z.string().min(1, 'Please select a destination account.'),
-  reason: z.string().min(1, 'Reason is required.'),
+  description: z.string().min(1, 'Description is required.'),
 }).refine(
   (data) => data.fromAccountId !== data.toAccountId,
   {
@@ -75,7 +75,7 @@ export function AddTransferDialog({ open, onOpenChange, bankAccounts, onTransfer
     resolver: zodResolver(transferSchema),
     defaultValues: {
       amount: 0,
-      reason: '',
+      description: '',
       fromAccountId: '',
       toAccountId: '',
       date: new Date(),
@@ -95,8 +95,8 @@ export function AddTransferDialog({ open, onOpenChange, bankAccounts, onTransfer
         },
         body: JSON.stringify({
           amount: data.amount,
-          date: data.date.getTime(),
-          reason: data.reason,
+          date: format(data.date, 'yyyy-MM-dd'),
+          description: data.description,
           fromAccountId: parseInt(data.fromAccountId),
           toAccountId: parseInt(data.toAccountId),
         }),
@@ -111,8 +111,8 @@ export function AddTransferDialog({ open, onOpenChange, bankAccounts, onTransfer
       const newTransfer: Transaction = {
         id: result.transactionId.toString(),
         amount: data.amount,
-        date: data.date.getTime().toString(),
-        description: data.reason,
+        date: format(data.date, 'yyyy-MM-dd'),
+        description: data.description,
         category: 'Transfer',
         subCategory: '',
         type: 'Transfer' as const,
@@ -125,7 +125,7 @@ export function AddTransferDialog({ open, onOpenChange, bankAccounts, onTransfer
 
       form.reset({
         amount: 0,
-        reason: '',
+        description: '',
         fromAccountId: '',
         toAccountId: '',
         date: new Date(),
@@ -282,10 +282,10 @@ export function AddTransferDialog({ open, onOpenChange, bankAccounts, onTransfer
 
             <FormField
               control={form.control}
-              name="reason"
+              name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Reason</FormLabel>
+                  <FormLabel>Description</FormLabel>
                   <FormControl>
                     <Input placeholder="e.g., Moving funds for investment" {...field} />
                   </FormControl>
