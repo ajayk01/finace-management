@@ -62,17 +62,21 @@ export function MonthlySummaryChart({ data, selectedYear, onYearChange, years }:
   
   type VisibilityKey = keyof typeof visibility;
 
-  const handleLegendClick = (e: { dataKey: VisibilityKey }) => {
-    const { dataKey } = e;
-    setVisibility(prev => ({
+  const isVisibilityKey = (value: unknown): value is VisibilityKey =>
+    value === "expense" || value === "income" || value === "investment";
+
+  const handleLegendClick: NonNullable<ComponentProps<typeof Legend>["onClick"]> = (payload) => {
+    const dataKey = (payload as any)?.dataKey;
+    if (!isVisibilityKey(dataKey)) return;
+    setVisibility((prev) => ({
       ...prev,
       [dataKey]: !prev[dataKey],
     }));
   };
   
   const renderLegendText = (value: string, entry: any) => {
-    const { dataKey } = entry.payload;
-    const isActive = visibility[dataKey as VisibilityKey];
+    const dataKey = entry?.dataKey ?? entry?.payload?.dataKey;
+    const isActive = isVisibilityKey(dataKey) ? visibility[dataKey] : true;
     return (
       <span
         className={cn(

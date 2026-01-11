@@ -46,6 +46,7 @@ import { AddInvestmentDialog } from './add-investment-dialog';
 import { PayCCBillDialog } from './pay-cc-bill-dialog';
 import { AddAccountDialog } from './add-account-dialog';
 import { AddTransferDialog } from './add-transfer-dialog';
+import { UnauditedExpenseDialog } from './unaudited-expense-dialog';
 import type { Category, SubCategory, Account } from './add-expense-dialog';
 import type { SplitwiseGroup } from './add-expense-dialog';
 import type { InvestmentCategory } from './add-investment-dialog';
@@ -98,6 +99,7 @@ export function DashboardHeader({
   const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
   const [isAddTransferOpen, setIsAddTransferOpen] = useState(false);
   const [isAddCapOpen, setIsAddCapOpen] = useState(false);
+  const [isUnauditedExpenseOpen, setIsUnauditedExpenseOpen] = useState(false);
   const [selectedCreditCardForCap, setSelectedCreditCardForCap] = useState<string>('');
   const [splitwiseGroups, setSplitwiseGroups] = useState<SplitwiseGroup[]>([]);
 
@@ -186,6 +188,7 @@ export function DashboardHeader({
                     <DropdownMenuItem onClick={onOpenSplitwiseDialog}>Splitwise</DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={onOpenAllTransactionsDialog}>Get All Transactions</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsUnauditedExpenseOpen(true)}>Unaudited Expense</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsPayCCBillOpen(true)}>Pay CC bill</DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
@@ -261,6 +264,12 @@ export function DashboardHeader({
         onOpenChange={setIsAddTransferOpen}
         bankAccounts={bankAccountsOnly}
         onTransferAdded={onTransferAdded}
+      />
+      <UnauditedExpenseDialog
+        open={isUnauditedExpenseOpen}
+        onOpenChange={setIsUnauditedExpenseOpen}
+        expenseCategories={expenseCategories}
+        expenseSubCategories={expenseSubCategories}
       />
       <AddCapHeaderDialog
         open={isAddCapOpen}
