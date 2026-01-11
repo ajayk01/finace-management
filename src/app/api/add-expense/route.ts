@@ -158,9 +158,9 @@ async function createExpenseTransaction({
 }: {
     amount: number;
     date: string;
-    description: string;
+    description?: string;
     account: { id: string; type: 'Bank' | 'Credit Card' };
-    categoryId: string;
+    categoryId?: string;
     subCategoryId?: string;
 }): Promise<number> {
     // Convert date string (YYYY-MM-DD) to epoch time (Unix timestamp in milliseconds, like Java System.currentTimeMillis())
@@ -180,10 +180,10 @@ async function createExpenseTransaction({
     
     const result: any = await query(sql, [
         epochTime,
-        description,
+        description || '',
         amount,
         parseInt(account.id),
-        parseInt(categoryId),
+        categoryId ? parseInt(categoryId) : null,
         subCategoryId ? parseInt(subCategoryId) : null,
         TransactionType.EXPENSE
     ]);
@@ -242,6 +242,7 @@ async function createCreditCardCapTransaction({
     amount: number;
 }): Promise<void> {
     try {
+        const rupeesOnlyAmount = Math.trunc(amount);
         // Insert cap transaction
         const insertSql = `
             INSERT INTO CreditCardCapTransactions (
@@ -256,9 +257,9 @@ async function createCreditCardCapTransaction({
             transactionId,
             parseInt(creditCardId),
             parseInt(capId),
-            amount
+            rupeesOnlyAmount
         ]);        
-        console.log(`✅ Created credit card cap transaction for cap ${capId}, amount: ${amount}`);
+        console.log(`✅ Created credit card cap transaction for cap ${capId}, amount: ${rupeesOnlyAmount}`);
     } catch (error) {
         console.error('❌ Error creating credit card cap transaction:', error);
         throw error;
@@ -268,12 +269,12 @@ async function createCreditCardCapTransaction({
 const addExpenseSchema = z.object({
   amount: z.number(),
   date: z.string(), // ISO date string
-  description: z.string(),
+  description: z.string().optional(),
   account: z.object({
       id: z.string(),
       type: z.enum(['Bank', 'Credit Card']),
   }),
-  categoryId: z.string(),
+  categoryId: z.string().optional(),
   subCategoryId: z.string().optional(),
   capId: z.string().optional(), // Credit card cap ID
   includeSplitwise: z.boolean().optional(),
@@ -350,7 +351,7 @@ export async function POST(request: NextRequest)
                 // Add to Splitwise first and capture the response
                 const splitwiseResponse = await addSplitwiseExpense({
                     amount: splitAmt,
-                    description: parsedData.description,
+                    description: parsedData.description? parsedData.description : "No description",
                     groupId: splitwiseGroupId,
                     userIds: splitwiseUserIds,
                     splitType: 'custom',

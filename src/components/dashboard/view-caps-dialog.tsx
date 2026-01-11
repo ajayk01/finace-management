@@ -102,7 +102,7 @@ export function ViewCapsDialog({
                         ₹{cap.capTotalAmount.toLocaleString('en-IN')}
                       </TableCell>
                       <TableCell className="text-right text-red-600">
-                        ₹{cap.capCurrentAmount.toLocaleString('en-IN')}
+                        ₹{Math.trunc(cap.capCurrentAmount).toLocaleString('en-IN')}
                       </TableCell>
                       <TableCell className="text-right text-green-600">
                         ₹{cap.remainingAmount.toLocaleString('en-IN')}

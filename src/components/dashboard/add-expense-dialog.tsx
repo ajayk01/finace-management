@@ -909,7 +909,7 @@ export function AddExpenseDialog({
                           <SelectContent>
                             {creditCardCaps.map(cap => (
                               <SelectItem key={cap.id} value={cap.id}>
-                                {cap.capName} - ₹{cap.remainingAmount.toFixed(2)} remaining (₹{cap.capCurrentAmount.toFixed(2)}/₹{cap.capTotalAmount})
+                                {cap.capName} - ₹{Math.trunc(cap.remainingAmount).toLocaleString('en-IN')} remaining (₹{Math.trunc(cap.capCurrentAmount).toLocaleString('en-IN')}/₹{Math.trunc(cap.capTotalAmount).toLocaleString('en-IN')})
                               </SelectItem>
                             ))}
                           </SelectContent>

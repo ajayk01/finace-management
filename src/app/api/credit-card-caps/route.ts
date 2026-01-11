@@ -41,10 +41,11 @@ async function fetchCreditCardCapsFromDB(creditCardId?: string) {
       id: cap.ID.toString(),
       creditCardId: cap.CREDIT_CARD_ID.toString(),
       capName: cap.CAP_NAME,
-      capTotalAmount: cap.CAP_TOTAL_AMOUNT,
+      capTotalAmount: Math.trunc(Number(cap.CAP_TOTAL_AMOUNT) || 0),
       capPercentage: cap.CAP_PERCENTAGE,
-      capCurrentAmount: cap.CAP_CURRENT_AMOUNT,
-      remainingAmount: cap.CAP_TOTAL_AMOUNT - cap.CAP_CURRENT_AMOUNT,
+      capCurrentAmount: Math.trunc(Number(cap.CAP_CURRENT_AMOUNT) || 0),
+      remainingAmount:
+        Math.trunc(Number(cap.CAP_TOTAL_AMOUNT) || 0) - Math.trunc(Number(cap.CAP_CURRENT_AMOUNT) || 0),
     }));
   } catch (error) {
     console.error("Error fetching credit card caps from database:", error);
