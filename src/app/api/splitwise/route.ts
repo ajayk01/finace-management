@@ -1,6 +1,8 @@
 'use server';
 
 import { NextResponse } from 'next/server';
+import { query } from '@/lib/db';
+import { SplitwiseFriend } from '@/types/database';
 
 // Helper function to make authenticated requests to Splitwise
 async function fetchSplitwise(endpoint: string, apiKey: string) {
@@ -30,6 +32,16 @@ export async function GET() {
     }
 
     try {
+        const dbFriends = await query<SplitwiseFriend>(
+            'SELECT ID, SPLITWISE_FRIEND_ID, NAME FROM SplitwiseFriends'
+        );
+        const splitwiseFriendIdToDbId = new Map<string, number>();
+        dbFriends.forEach((friend: SplitwiseFriend) => {
+            if (friend.SPLITWISE_FRIEND_ID !== null && friend.SPLITWISE_FRIEND_ID !== undefined) {
+                splitwiseFriendIdToDbId.set(String(friend.SPLITWISE_FRIEND_ID), friend.ID);
+            }
+        });
+
         const { groups } = await fetchSplitwise('get_groups', SPLITWISE_API_KEY);
 
         const groupsWithMembers = await Promise.all(
@@ -37,6 +49,7 @@ export async function GET() {
                 const groupDetails = await fetchSplitwise(`get_group/${group.id}`, SPLITWISE_API_KEY);
                 const members = groupDetails.group.members.map((member: any) => ({
                     id: member.id.toString(),
+                    friendId: splitwiseFriendIdToDbId.get(member.id.toString()) ?? null,
                     name: `${member.first_name} ${member.last_name || ''}`.trim(),
                 }));
                 return {
