@@ -83,9 +83,9 @@ export function StatCard(props: StatCardProps) {
                 {props.creditCardLogoIcon && <img
                             src={props.creditCardLogoIcon}
                             alt={creditCardName || "credit_card Logo"}
-                            className="h-8 w-8 object-contain"
+                            className="h-16 w-16 object-contain"
                           />}
-                {creditCardName && <h3 className="text-lg font-semibold text-foreground">{creditCardName}</h3>}
+                {creditCardName && <h3 className="text font-semibold text-foreground">{creditCardName}</h3>}
             </div>
             <div className="flex gap-2">
               {onViewCaps && (

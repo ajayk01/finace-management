@@ -6,7 +6,7 @@ import { Account } from '@/types/database';
 async function fetchBankAccountsFromDB() {
   try {
     const accounts = await query<Account>(
-      `SELECT ID, ACCOUNT_NAME, CURRENT_BALANCE, INITIAL_BALANCE, ACCOUNT_TYPE, IS_ACTIVE
+      `SELECT ID, ACCOUNT_NAME, CURRENT_BALANCE, INITIAL_BALANCE, ACCOUNT_TYPE, IS_ACTIVE, IMG
        FROM Accounts
        WHERE ACCOUNT_TYPE = ? AND IS_ACTIVE = 1
        ORDER BY ACCOUNT_NAME`,
@@ -18,7 +18,7 @@ async function fetchBankAccountsFromDB() {
       name: account.ACCOUNT_NAME,
       balance: account.CURRENT_BALANCE,
       initialBalance: account.INITIAL_BALANCE,
-      logo: "", // Add logo logic if needed
+      logo: account.IMG || "",
     }));
   } catch (error) {
     console.error("Error fetching bank accounts from database:", error);

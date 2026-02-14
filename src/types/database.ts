@@ -8,6 +8,7 @@ export interface Account {
   ACCOUNT_TYPE: number; // 1: Bank, 2: Credit Card, 3: Investment
   IS_ACTIVE: boolean | number; // MySQL returns 0/1 for boolean
   TOTAL_LIMIT: number;
+  IMG: string | null; // Logo URL for the account (may be null)
 }
 
 export interface InvestmentAccountDetails {

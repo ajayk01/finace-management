@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch accounts
     const accountsSql = `
-      SELECT ID, ACCOUNT_NAME, CURRENT_BALANCE, INITIAL_BALANCE, ACCOUNT_TYPE, IS_ACTIVE
+      SELECT ID, ACCOUNT_NAME, CURRENT_BALANCE, INITIAL_BALANCE, ACCOUNT_TYPE, IS_ACTIVE, IMG, TOTAL_LIMITS AS TOTAL_LIMIT
       FROM Accounts`;
     
     const accounts = await query<DBAccount>(accountsSql, []);
@@ -45,7 +45,8 @@ export async function GET(request: NextRequest) {
         name: account.ACCOUNT_NAME,
         currentBalance: account.CURRENT_BALANCE,
         initialBalance: account.INITIAL_BALANCE,
-        isActive: !!account.IS_ACTIVE
+        isActive: !!account.IS_ACTIVE,
+        logo: account.IMG || ""
       };
 
       if (account.ACCOUNT_TYPE === AccountType.BANK) {

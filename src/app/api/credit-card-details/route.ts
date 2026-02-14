@@ -6,7 +6,7 @@ import { Account, CreditCardDetails } from '@/types/database';
 async function fetchCreditCardsFromDB() {
   try {
     const creditCards = await query<Account & { CURRENT_REWARD_POINTS?: number }>(
-      `SELECT ID, ACCOUNT_NAME, CURRENT_BALANCE, INITIAL_BALANCE, ACCOUNT_TYPE, IS_ACTIVE
+      `SELECT ID, ACCOUNT_NAME, CURRENT_BALANCE, INITIAL_BALANCE, ACCOUNT_TYPE, IS_ACTIVE, IMG, TOTAL_LIMITS AS TOTAL_LIMIT
        FROM Accounts
        WHERE ACCOUNT_TYPE = ? AND IS_ACTIVE = 1
        ORDER BY ACCOUNT_NAME`,
@@ -19,7 +19,7 @@ async function fetchCreditCardsFromDB() {
       usedAmount: Math.abs(card.CURRENT_BALANCE), // Convert to positive for display
       totalLimit: card.TOTAL_LIMIT || 0,
       //currentRewardPoints: card.CURRENT_REWARD_POINTS || 0,
-      logo: "", // Add logo logic if needed
+      logo: card.IMG || "",
     }));
   } catch (error) {
     console.error("Error fetching credit cards from database:", error);
