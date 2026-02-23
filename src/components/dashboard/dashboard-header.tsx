@@ -100,6 +100,7 @@ export function DashboardHeader({
   const [isAddTransferOpen, setIsAddTransferOpen] = useState(false);
   const [isAddCapOpen, setIsAddCapOpen] = useState(false);
   const [isUnauditedExpenseOpen, setIsUnauditedExpenseOpen] = useState(false);
+
   const [selectedCreditCardForCap, setSelectedCreditCardForCap] = useState<string>('');
   const [splitwiseGroups, setSplitwiseGroups] = useState<SplitwiseGroup[]>([]);
 
@@ -190,6 +191,7 @@ export function DashboardHeader({
                     <DropdownMenuItem onClick={onOpenAllTransactionsDialog}>Get All Transactions</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setIsUnauditedExpenseOpen(true)}>Unaudited Expense</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsPayCCBillOpen(true)}>Pay CC bill</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push('/mf-investments')}>Check MF Investment</DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
 
