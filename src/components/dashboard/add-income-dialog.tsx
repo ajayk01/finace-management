@@ -41,6 +41,7 @@ import type { Transaction } from '@/app/page';
 const incomeSchemaBase = z.object({
   amount: z.coerce.number().min(0.01, 'Amount must be greater than 0.'),
   date: z.date({ required_error: 'A date is required.' }),
+  time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid time format.'),
   description: z.string().min(1, 'Description is required.'),
   accountId: z.string().min(1, 'Please select an account.'),
   categoryId: z.string().min(1, 'Category is required.'),
@@ -108,13 +109,15 @@ export function AddIncomeDialog({
 
   const form = useForm<IncomeFormValues>({
     resolver: zodResolver(incomeSchema),
-    defaultValues: initialValues || {
+    defaultValues: {
       amount: 0,
       description: '',
       accountId: '',
       categoryId: '',
       subCategoryId: '',
       date: new Date(),
+      time: format(new Date(), 'HH:mm'),
+      ...initialValues,
     },
   });
 
@@ -160,7 +163,7 @@ export function AddIncomeDialog({
 
     const payload: any = {
         amount: values.amount,
-        date: format(values.date, 'yyyy-MM-dd'),
+        date: format(values.date, 'yyyy-MM-dd') + 'T' + values.time,
         description: values.description,
         account: {
             id: values.accountId,
@@ -244,48 +247,63 @@ export function AddIncomeDialog({
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Date</FormLabel>
-                    <Popover modal={true}>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant={"outline"}
-                            type="button"
-                            className={cn(
-                              "w-full pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value ? (
-                              format(field.value, "PPP")
-                            ) : (
-                              <span>Pick a date</span>
-                            )}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0 z-[9999]" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date) =>
-                            date > new Date() || date < new Date("1900-01-01")
-                          }
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Date</FormLabel>
+                      <Popover modal={true}>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant={"outline"}
+                              type="button"
+                              className={cn(
+                                "w-full pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0 z-[9999]" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            disabled={(date) =>
+                              date > new Date() || date < new Date("1900-01-01")
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="time"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Time</FormLabel>
+                      <FormControl>
+                        <Input type="time" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
               <FormField
                 control={form.control}
                 name="description"
