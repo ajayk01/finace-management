@@ -11,13 +11,14 @@ const CURRENT_USER_ID = process.env.SPLITWISE_CURRENT_USER_ID || "57391213"; // 
 const userMapping = new Map<string, string>();
 
 // Splitwise API function using pure HTTP requests
-async function addSplitwiseExpense({ amount, description, groupId, userIds, splitType, customAmounts }: {
+async function addSplitwiseExpense({ amount, description, groupId, userIds, splitType, customAmounts, date }: {
     amount: number;
     description: string;
     groupId: string;
     userIds: string[];
     splitType?: 'equal' | 'custom';
     customAmounts?: Record<string, number>;
+    date?: string;
 }) {
     const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
     
@@ -33,6 +34,9 @@ async function addSplitwiseExpense({ amount, description, groupId, userIds, spli
     formData.append('group_id', groupId);
     formData.append('currency_code', 'INR'); // Adjust currency as needed
     formData.append('details', "string");
+    if (date) {
+        formData.append('date', new Date(date).toISOString());
+    }
     
     // Determine if we're using equal split or custom amounts
     const useEqualSplit = splitType === 'equal' || !splitType || !customAmounts;
@@ -355,7 +359,8 @@ export async function POST(request: NextRequest)
                     groupId: splitwiseGroupId,
                     userIds: splitwiseUserIds,
                     splitType: 'custom',
-                    customAmounts: customAmounts
+                    customAmounts: customAmounts,
+                    date: date
                 });
                 // Extract Splitwise transaction ID from the response
                 splitwiseTransactionId = splitwiseResponse?.expenses?.[0]?.id?.toString() || splitwiseResponse?.id?.toString();

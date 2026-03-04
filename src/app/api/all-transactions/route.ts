@@ -202,8 +202,38 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Transaction ID is required" }, { status: 400 });
     }
 
-    const sql = `DELETE FROM Transactions WHERE ID = ?`;
-    await query(sql, [parseInt(id, 10)]);
+    const transactionId = parseInt(id, 10);
+
+    // Check for linked Splitwise transactions and delete the expense from Splitwise API
+    const splitwiseRows = await query<{ SPLITWISE_TRANSACTION_ID: string }>(
+      `SELECT DISTINCT SPLITWISE_TRANSACTION_ID FROM SplitwiseTransactions WHERE TRANSACTION_ID = ?`,
+      [transactionId]
+    );
+
+    if (splitwiseRows.length > 0) {
+      const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
+      if (SPLITWISE_API_KEY) {
+        for (const row of splitwiseRows) {
+          try {
+            const res = await fetch(
+              `https://secure.splitwise.com/api/v3.0/delete_expense/${row.SPLITWISE_TRANSACTION_ID}`,
+              {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${SPLITWISE_API_KEY}` },
+              }
+            );
+            if (res.ok) {
+              console.log(`✅ Deleted Splitwise expense ${row.SPLITWISE_TRANSACTION_ID}`);
+            } else {
+              console.warn(`⚠️ Failed to delete Splitwise expense ${row.SPLITWISE_TRANSACTION_ID}: ${res.status}`);
+            }
+          } catch (swError) {
+            console.warn(`⚠️ Error deleting Splitwise expense ${row.SPLITWISE_TRANSACTION_ID}:`, swError);
+          }
+        }
+      }
+    }
+    await query(`DELETE FROM Transactions WHERE ID = ?`, [transactionId]);
 
     return NextResponse.json({ success: true, message: "Transaction deleted successfully" });
   } catch (error) {
