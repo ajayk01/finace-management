@@ -135,6 +135,7 @@ export function AllTransactionsDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [investmentAccounts, setInvestmentAccounts] = useState<{ id: string; name: string }[]>([]);
   const [typeFilter, setTypeFilter] = useState<'All' | 'Income' | 'Expense' | 'Investment'>('All');
+  const [accountFilter, setAccountFilter] = useState<string>('All');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const monthMap = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     return monthMap[new Date().getMonth()];
@@ -591,6 +592,41 @@ export function AllTransactionsDialog({
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex-1">
+                <label className="text-sm font-medium mb-2 block">Account</label>
+                <Select value={accountFilter} onValueChange={setAccountFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="All">All Accounts</SelectItem>
+                    {bankAccounts.length > 0 && (
+                      <>
+                        <SelectItem value="__bank_header" disabled className="font-semibold text-xs text-muted-foreground">
+                          — Bank Accounts —
+                        </SelectItem>
+                        {bankAccounts.map((acc) => (
+                          <SelectItem key={acc.id} value={acc.id}>
+                            {acc.name}
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
+                    {creditCards.length > 0 && (
+                      <>
+                        <SelectItem value="__cc_header" disabled className="font-semibold text-xs text-muted-foreground">
+                          — Credit Cards —
+                        </SelectItem>
+                        {creditCards.map((card) => (
+                          <SelectItem key={card.id} value={card.id}>
+                            {card.name}
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto px-6 pb-6">
@@ -619,6 +655,7 @@ export function AllTransactionsDialog({
                   <TableBody>
                     {transactions
                       .filter(tx => typeFilter === 'All' || tx.type === typeFilter)
+                      .filter(tx => accountFilter === 'All' || tx.accountId === accountFilter)
                       .map((transaction) => (
                       <TableRow key={transaction.id}>
                         <TableCell className="whitespace-nowrap">
