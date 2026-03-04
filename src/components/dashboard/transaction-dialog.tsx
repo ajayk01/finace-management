@@ -10,6 +10,16 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -19,7 +29,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, Edit2, Copy, Trash2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,6 +46,13 @@ interface Transaction {
   type: 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Other';
   category?: string;
   subCategory?: string;
+  accountId?: string;
+  accountName?: string;
+  categoryId?: string;
+  subCategoryId?: string;
+  investmentAccountId?: string;
+  investmentAccountName?: string;
+  capId?: string;
 }
 
 interface TransactionDialogProps {
@@ -57,6 +74,11 @@ interface TransactionDialogProps {
   onCategoryFilterChange?: (value: string) => void;
   includeSplitwise?: boolean;
   onIncludeSplitwiseChange?: (value: boolean) => void;
+  // Action callbacks for edit, duplicate, delete
+  onEdit?: (transaction: Transaction) => void;
+  onDuplicate?: (transaction: Transaction) => void;
+  onDelete?: (transaction: Transaction) => void;
+  isDeleting?: boolean;
 }
 
 const formatDate = (dateString: string | null) => {
@@ -99,8 +121,30 @@ export function TransactionDialog({
   categoryFilter,
   onCategoryFilterChange,
   includeSplitwise,
-  onIncludeSplitwiseChange
+  onIncludeSplitwiseChange,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  isDeleting = false,
 }: TransactionDialogProps) {
+
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
+  const [transactionToDelete, setTransactionToDelete] = React.useState<Transaction | null>(null);
+
+  const hasActions = !!(onEdit || onDuplicate || onDelete);
+
+  const handleDeleteClick = (tx: Transaction) => {
+    setTransactionToDelete(tx);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (transactionToDelete && onDelete) {
+      onDelete(transactionToDelete);
+    }
+    setDeleteConfirmOpen(false);
+    setTransactionToDelete(null);
+  };
 
   const isMonthlySummary = React.useMemo(() =>
     transactions.length > 0 && transactions.some(tx => tx.category),
@@ -119,8 +163,8 @@ export function TransactionDialog({
   }, [transactions, includeSplitwise]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[1200px] h-[90vh] flex flex-col">
+    <>
+    <Dialog open={open} onOpenChange={onOpenChange}>      <DialogContent className="sm:max-w-[1200px] h-[90vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center justify-between pr-8">
             <DialogTitle>{title || "Transactions"}</DialogTitle>
@@ -200,6 +244,7 @@ export function TransactionDialog({
                         <TableHead>Description</TableHead>
                       )}
                       <TableHead className="text-right">Amount</TableHead>
+                      {hasActions && <TableHead className="text-center">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -237,6 +282,45 @@ export function TransactionDialog({
                           {tx.type === 'Income' ? '+' : tx.type === 'Expense' ? '' : ''}
                           {formatCurrency(tx.amount)}
                         </TableCell>
+                        {hasActions && (
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-1">
+                              {onEdit && tx.type !== 'Other' && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => onEdit(tx)}
+                                  title="Edit"
+                                >
+                                  <Edit2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {onDuplicate && tx.type !== 'Other' && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => onDuplicate(tx)}
+                                  title="Duplicate"
+                                >
+                                  <Copy className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {onDelete && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                  onClick={() => handleDeleteClick(tx)}
+                                  title="Delete"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -270,5 +354,30 @@ export function TransactionDialog({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Delete Confirmation Dialog */}
+    <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This action cannot be undone. This will permanently delete the transaction
+            {transactionToDelete ? ` "${transactionToDelete.description}"` : ''}.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

@@ -8,6 +8,9 @@ import { MonthlyMoneyTable, type FinancialSnapshotItem } from "@/components/dash
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog"; // Import new component
 import { InvestmentCalculatorDialog } from "@/components/dashboard/investment-calculator-dialog";
 import { AllTransactionsDialog } from "@/components/dashboard/all-transactions-dialog";
+import { AddExpenseDialog } from "@/components/dashboard/add-expense-dialog";
+import { AddIncomeDialog } from "@/components/dashboard/add-income-dialog";
+import { AddInvestmentDialog } from "@/components/dashboard/add-investment-dialog";
 import { AlertCircle } from "lucide-react";
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { Category, SubCategory, Account } from "@/components/dashboard/add-expense-dialog";
@@ -15,6 +18,8 @@ import type { InvestmentCategory } from "@/components/dashboard/add-investment-d
 import { SplitwiseDialog } from "@/components/dashboard/splitwise-dialog";
 import type { FriendBalance } from "@/components/dashboard/splitwise-dialog";
 import { ViewCapsDialog } from "@/components/dashboard/view-caps-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { parse } from 'date-fns';
 
 // Helper function to format currency in Indian format
 const formatIndianCurrency = (amount: number): string => {
@@ -70,6 +75,13 @@ export interface Transaction {
   type: 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Other';
   category?: string;
   subCategory?: string;
+  accountId?: string;
+  accountName?: string;
+  categoryId?: string;
+  subCategoryId?: string;
+  investmentAccountId?: string;
+  investmentAccountName?: string;
+  capId?: string;
 }
 
 interface SummaryDataItem {
@@ -124,6 +136,7 @@ const groupTransactions = (transactions: Transaction[], month: string, year: num
 
 
 export default function DashboardPage() {
+  const { toast } = useToast();
   const dataCache = useRef<Record<string, any>>({});
   const now = new Date();
   const currentMonthValue = monthOptions[now.getMonth()].value;
@@ -198,6 +211,21 @@ export default function DashboardPage() {
   const [isFetchingMoreTransactions, setIsFetchingMoreTransactions] = useState(false);
   const [transactionEntityType, setTransactionEntityType] = useState<'bank' | 'credit-card' | null>(null);
   const [transactionCategoryFilter, setTransactionCategoryFilter] = useState<string>('all');
+  const [isDeletingTransaction, setIsDeletingTransaction] = useState(false);
+
+  // State for edit/duplicate from TransactionDialog (bank/cc transactions)
+  const [txDialogEditExpenseOpen, setTxDialogEditExpenseOpen] = useState(false);
+  const [txDialogEditExpenseData, setTxDialogEditExpenseData] = useState<Transaction | null>(null);
+  const [txDialogDuplicateExpenseOpen, setTxDialogDuplicateExpenseOpen] = useState(false);
+  const [txDialogDuplicateExpenseData, setTxDialogDuplicateExpenseData] = useState<Transaction | null>(null);
+  const [txDialogEditIncomeOpen, setTxDialogEditIncomeOpen] = useState(false);
+  const [txDialogEditIncomeData, setTxDialogEditIncomeData] = useState<Transaction | null>(null);
+  const [txDialogDuplicateIncomeOpen, setTxDialogDuplicateIncomeOpen] = useState(false);
+  const [txDialogDuplicateIncomeData, setTxDialogDuplicateIncomeData] = useState<Transaction | null>(null);
+  const [txDialogEditInvestmentOpen, setTxDialogEditInvestmentOpen] = useState(false);
+  const [txDialogEditInvestmentData, setTxDialogEditInvestmentData] = useState<Transaction | null>(null);
+  const [txDialogDuplicateInvestmentOpen, setTxDialogDuplicateInvestmentOpen] = useState(false);
+  const [txDialogDuplicateInvestmentData, setTxDialogDuplicateInvestmentData] = useState<Transaction | null>(null);
   
   // State for investment calculator dialog
   const [isInvestmentCalculatorOpen, setIsInvestmentCalculatorOpen] = useState(false);
@@ -662,6 +690,125 @@ export default function DashboardPage() {
     setIsViewCapsDialogOpen(true);
   };
 
+  // Helper to re-fetch the current transaction dialog's data
+  const refetchCurrentTransactions = useCallback(async () => {
+    if (!selectedAccountId || !transactionEntityType) return;
+    try {
+      const apiUrl = transactionEntityType === 'bank'
+        ? `/api/bank-transactions?bankAccountId=${selectedAccountId}`
+        : `/api/credit-card-transactions?creditCardId=${selectedAccountId}`;
+      const res = await fetch(apiUrl);
+      if (res.ok) {
+        const data = await res.json();
+        const fetchedTransactions = data.transactions || [];
+        setAllFetchedTransactions(fetchedTransactions);
+        setTransactions(fetchedTransactions.slice(0, transactionPage * 20));
+      }
+    } catch (error) {
+      console.error("Error refetching transactions:", error);
+    }
+  }, [selectedAccountId, transactionEntityType, transactionPage]);
+
+  // Edit handler for TransactionDialog
+  const handleTxDialogEdit = useCallback((tx: Transaction) => {
+    if (tx.type === 'Expense') {
+      setTxDialogEditExpenseData(tx);
+      setTxDialogEditExpenseOpen(true);
+    } else if (tx.type === 'Income') {
+      setTxDialogEditIncomeData(tx);
+      setTxDialogEditIncomeOpen(true);
+    } else if (tx.type === 'Investment') {
+      setTxDialogEditInvestmentData(tx);
+      setTxDialogEditInvestmentOpen(true);
+    }
+  }, []);
+
+  // Duplicate handler for TransactionDialog
+  const handleTxDialogDuplicate = useCallback((tx: Transaction) => {
+    if (tx.type === 'Expense') {
+      setTxDialogDuplicateExpenseData(tx);
+      setTxDialogDuplicateExpenseOpen(true);
+    } else if (tx.type === 'Income') {
+      setTxDialogDuplicateIncomeData(tx);
+      setTxDialogDuplicateIncomeOpen(true);
+    } else if (tx.type === 'Investment') {
+      setTxDialogDuplicateInvestmentData(tx);
+      setTxDialogDuplicateInvestmentOpen(true);
+    }
+  }, []);
+
+  // Delete handler for TransactionDialog
+  const handleTxDialogDelete = useCallback(async (tx: Transaction) => {
+    setIsDeletingTransaction(true);
+    try {
+      const res = await fetch(`/api/all-transactions?id=${tx.id}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast({
+          title: "Success",
+          description: "Transaction deleted successfully",
+        });
+        await refetchCurrentTransactions();
+        fetchBankDetails();
+        fetchCreditCardDetails();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: data.error || "Failed to delete transaction",
+        });
+      }
+    } catch (error) {
+      console.error("Error deleting transaction:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "An error occurred while deleting transaction",
+      });
+    } finally {
+      setIsDeletingTransaction(false);
+    }
+  }, [refetchCurrentTransactions, fetchBankDetails, fetchCreditCardDetails, toast]);
+
+  // Callback when a transaction is updated/created from the TransactionDialog edit/duplicate dialogs
+  const handleTxDialogTransactionUpdated = useCallback(async () => {
+    await refetchCurrentTransactions();
+    fetchBankDetails();
+    fetchCreditCardDetails();
+    // Close all edit/duplicate dialogs
+    setTxDialogEditExpenseOpen(false);
+    setTxDialogEditExpenseData(null);
+    setTxDialogDuplicateExpenseOpen(false);
+    setTxDialogDuplicateExpenseData(null);
+    setTxDialogEditIncomeOpen(false);
+    setTxDialogEditIncomeData(null);
+    setTxDialogDuplicateIncomeOpen(false);
+    setTxDialogDuplicateIncomeData(null);
+    setTxDialogEditInvestmentOpen(false);
+    setTxDialogEditInvestmentData(null);
+    setTxDialogDuplicateInvestmentOpen(false);
+    setTxDialogDuplicateInvestmentData(null);
+  }, [refetchCurrentTransactions, fetchBankDetails, fetchCreditCardDetails]);
+
+  // Combined accounts for edit/duplicate dialogs
+  const combinedAccountsForTxDialog = useMemo(() => [
+    ...apiBankAccounts.map(acc => ({
+      id: acc.id,
+      name: acc.name,
+      type: 'Bank' as const,
+      balance: acc.balance,
+    })),
+    ...apiCreditCards.map(card => ({
+      id: card.id,
+      name: card.name,
+      type: 'Credit Card' as const,
+      usedAmount: card.usedAmount,
+      totalLimit: card.totalLimit,
+    })),
+  ], [apiBankAccounts, apiCreditCards]);
+
   const handleViewMonthlyTransactions = (
     title: string,
     sourceData: Transaction[],
@@ -1018,6 +1165,10 @@ export default function DashboardPage() {
         }}
         includeSplitwise={includeSplitwise}
         onIncludeSplitwiseChange={setIncludeSplitwise}
+        onEdit={transactionEntityType ? handleTxDialogEdit : undefined}
+        onDuplicate={transactionEntityType ? handleTxDialogDuplicate : undefined}
+        onDelete={transactionEntityType ? handleTxDialogDelete : undefined}
+        isDeleting={isDeletingTransaction}
       />
       <InvestmentCalculatorDialog 
         open={isInvestmentCalculatorOpen}
@@ -1071,6 +1222,152 @@ export default function DashboardPage() {
         creditCardId={selectedCreditCardForCaps?.id || ''}
         creditCardName={selectedCreditCardForCaps?.name || ''}
       />
+
+      {/* Edit/Duplicate dialogs for TransactionDialog (Bank/CC transactions) */}
+      {txDialogEditExpenseData && (
+        <AddExpenseDialog
+          open={txDialogEditExpenseOpen}
+          onOpenChange={(open) => {
+            setTxDialogEditExpenseOpen(open);
+            if (!open) setTxDialogEditExpenseData(null);
+          }}
+          categories={expenseCategories}
+          subCategories={expenseSubCategories}
+          accounts={combinedAccountsForTxDialog}
+          onExpenseAdded={handleTxDialogTransactionUpdated}
+          editTransactionId={txDialogEditExpenseData.id}
+          initialValues={{
+            amount: txDialogEditExpenseData.amount,
+            date: txDialogEditExpenseData.date ? parse(txDialogEditExpenseData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            description: txDialogEditExpenseData.description,
+            accountId: txDialogEditExpenseData.accountId || '',
+            categoryId: txDialogEditExpenseData.categoryId || '',
+            subCategoryId: txDialogEditExpenseData.subCategoryId || '',
+            capId: txDialogEditExpenseData.capId || undefined,
+            includeSplitwise: false,
+            splitwiseGroupId: '',
+            splitwiseUserIds: [],
+            splitType: 'equal',
+            customAmounts: {},
+          }}
+        />
+      )}
+      {txDialogDuplicateExpenseData && (
+        <AddExpenseDialog
+          open={txDialogDuplicateExpenseOpen}
+          onOpenChange={(open) => {
+            setTxDialogDuplicateExpenseOpen(open);
+            if (!open) setTxDialogDuplicateExpenseData(null);
+          }}
+          categories={expenseCategories}
+          subCategories={expenseSubCategories}
+          accounts={combinedAccountsForTxDialog}
+          onExpenseAdded={handleTxDialogTransactionUpdated}
+          initialValues={{
+            amount: txDialogDuplicateExpenseData.amount,
+            date: new Date(),
+            description: txDialogDuplicateExpenseData.description,
+            accountId: txDialogDuplicateExpenseData.accountId || '',
+            categoryId: txDialogDuplicateExpenseData.categoryId || '',
+            subCategoryId: txDialogDuplicateExpenseData.subCategoryId || '',
+            includeSplitwise: false,
+            splitwiseGroupId: '',
+            splitwiseUserIds: [],
+            splitType: 'equal',
+            customAmounts: {},
+          }}
+        />
+      )}
+      {txDialogEditIncomeData && (
+        <AddIncomeDialog
+          open={txDialogEditIncomeOpen}
+          onOpenChange={(open) => {
+            setTxDialogEditIncomeOpen(open);
+            if (!open) setTxDialogEditIncomeData(null);
+          }}
+          categories={incomeCategories}
+          subCategories={incomeSubCategories}
+          accounts={combinedAccountsForTxDialog.map(acc => ({ id: acc.id, name: acc.name, type: acc.type }))}
+          onIncomeAdded={handleTxDialogTransactionUpdated}
+          editTransactionId={txDialogEditIncomeData.id}
+          initialValues={{
+            amount: txDialogEditIncomeData.amount,
+            date: txDialogEditIncomeData.date ? parse(txDialogEditIncomeData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            description: txDialogEditIncomeData.description,
+            accountId: txDialogEditIncomeData.accountId || '',
+            categoryId: txDialogEditIncomeData.categoryId || '',
+            subCategoryId: txDialogEditIncomeData.subCategoryId || '',
+          }}
+        />
+      )}
+      {txDialogDuplicateIncomeData && (
+        <AddIncomeDialog
+          open={txDialogDuplicateIncomeOpen}
+          onOpenChange={(open) => {
+            setTxDialogDuplicateIncomeOpen(open);
+            if (!open) setTxDialogDuplicateIncomeData(null);
+          }}
+          categories={incomeCategories}
+          subCategories={incomeSubCategories}
+          accounts={combinedAccountsForTxDialog.map(acc => ({ id: acc.id, name: acc.name, type: acc.type }))}
+          onIncomeAdded={handleTxDialogTransactionUpdated}
+          initialValues={{
+            amount: txDialogDuplicateIncomeData.amount,
+            date: new Date(),
+            description: txDialogDuplicateIncomeData.description,
+            accountId: txDialogDuplicateIncomeData.accountId || '',
+            categoryId: txDialogDuplicateIncomeData.categoryId || '',
+            subCategoryId: txDialogDuplicateIncomeData.subCategoryId || '',
+          }}
+        />
+      )}
+      {txDialogEditInvestmentData && (
+        <AddInvestmentDialog
+          open={txDialogEditInvestmentOpen}
+          onOpenChange={(open) => {
+            setTxDialogEditInvestmentOpen(open);
+            if (!open) setTxDialogEditInvestmentData(null);
+          }}
+          investmentCategories={investmentCategories}
+          accounts={apiBankAccounts.map(acc => ({
+            id: acc.id,
+            name: acc.name,
+            type: 'Bank' as const,
+          }))}
+          onInvestmentAdded={handleTxDialogTransactionUpdated}
+          editTransactionId={txDialogEditInvestmentData.id}
+          initialValues={{
+            amount: txDialogEditInvestmentData.amount,
+            date: txDialogEditInvestmentData.date ? parse(txDialogEditInvestmentData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            description: txDialogEditInvestmentData.description,
+            accountId: txDialogEditInvestmentData.accountId || '',
+            investmentAccountId: txDialogEditInvestmentData.investmentAccountId || '',
+          }}
+        />
+      )}
+      {txDialogDuplicateInvestmentData && (
+        <AddInvestmentDialog
+          open={txDialogDuplicateInvestmentOpen}
+          onOpenChange={(open) => {
+            setTxDialogDuplicateInvestmentOpen(open);
+            if (!open) setTxDialogDuplicateInvestmentData(null);
+          }}
+          investmentCategories={investmentCategories}
+          accounts={apiBankAccounts.map(acc => ({
+            id: acc.id,
+            name: acc.name,
+            type: 'Bank' as const,
+          }))}
+          onInvestmentAdded={handleTxDialogTransactionUpdated}
+          initialValues={{
+            amount: txDialogDuplicateInvestmentData.amount,
+            date: new Date(),
+            description: txDialogDuplicateInvestmentData.description,
+            accountId: txDialogDuplicateInvestmentData.accountId || '',
+            investmentAccountId: txDialogDuplicateInvestmentData.investmentAccountId || '',
+          }}
+        />
+      )}
     </div>
   );
 }

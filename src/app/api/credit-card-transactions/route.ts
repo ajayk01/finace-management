@@ -10,6 +10,15 @@ interface Transaction {
     description: string;
     amount: number;
     type: 'Income' | 'Expense' | 'Investment' | 'Other';
+    category?: string;
+    subCategory?: string;
+    accountId?: string;
+    accountName?: string;
+    categoryId?: string;
+    subCategoryId?: string;
+    investmentAccountId?: string;
+    investmentAccountName?: string;
+    capId?: string;
 }
 
 const monthMap: Record<string, number> = {
@@ -45,8 +54,20 @@ async function fetchCreditCardTransactionsFromDB(
         t.NOTES,
         t.TRANSCATION_TYPE,
         t.FROM_ACCOUNT_ID,
-        t.TO_ACCOUNT_ID
+        t.TO_ACCOUNT_ID,
+        t.CATEGORY_ID,
+        t.SUB_CATEGORY_ID,
+        c.CATEGORY_NAME,
+        sc.SUB_CATEGORY_NAME,
+        aFrom.ACCOUNT_NAME AS FROM_ACCOUNT_NAME,
+        aTo.ACCOUNT_NAME AS TO_ACCOUNT_NAME,
+        cct.CAP_ID
       FROM Transactions t
+      LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
+      LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
+      LEFT JOIN Accounts aFrom ON t.FROM_ACCOUNT_ID = aFrom.ID
+      LEFT JOIN Accounts aTo ON t.TO_ACCOUNT_ID = aTo.ID
+      LEFT JOIN CreditCardCapTransactions cct ON t.ID = cct.TRANSACTION_ID
       WHERE (t.FROM_ACCOUNT_ID = ? OR t.TO_ACCOUNT_ID = ?)
     `;
 
@@ -67,6 +88,13 @@ async function fetchCreditCardTransactionsFromDB(
       TRANSCATION_TYPE: number;
       FROM_ACCOUNT_ID: number;
       TO_ACCOUNT_ID: number;
+      CATEGORY_ID: number;
+      SUB_CATEGORY_ID: number;
+      CATEGORY_NAME: string;
+      SUB_CATEGORY_NAME: string;
+      FROM_ACCOUNT_NAME: string;
+      TO_ACCOUNT_NAME: string;
+      CAP_ID: number | null;
     }>(sql, params);
 
     console.log(`Fetched ${transactions.length} credit card transactions for account ${creditCardId}`);
@@ -74,22 +102,39 @@ async function fetchCreditCardTransactionsFromDB(
     // Map to Transaction interface and determine type
     return transactions.map((tx: any) => {
       let type: Transaction['type'] = 'Other';
+      let category = '';
+      let subCategory = '';
+      let accountId = '';
+      let accountName = '';
+      let investmentAccountId = '';
+      let investmentAccountName = '';
       
       // Determine transaction type based on TRANSCATION_TYPE and account direction
       if (tx.TRANSCATION_TYPE === TransactionType.EXPENSE) {
-        // For credit cards, expenses are FROM the credit card (charges)
         type = 'Expense';
+        category = tx.CATEGORY_NAME || '';
+        subCategory = tx.SUB_CATEGORY_NAME || '';
+        accountId = tx.FROM_ACCOUNT_ID?.toString() || '';
+        accountName = tx.FROM_ACCOUNT_NAME || '';
       } else if (tx.TRANSCATION_TYPE === TransactionType.INCOME) {
-        // Income to credit card would be refunds or rewards
         type = 'Income';
+        category = tx.CATEGORY_NAME || '';
+        subCategory = tx.SUB_CATEGORY_NAME || '';
+        accountId = tx.TO_ACCOUNT_ID?.toString() || '';
+        accountName = tx.TO_ACCOUNT_NAME || '';
       } else if (tx.TRANSCATION_TYPE === TransactionType.TRANSFER) {
-        // Transfers TO credit card are payments (show as Income to reduce balance)
-        // Special handling: if it's a payment to credit card (TO_ACCOUNT_ID = creditCardId), show as 'Income'
+        // Transfers TO credit card are payments
         if (tx.TO_ACCOUNT_ID.toString() === creditCardId) {
           type = 'Income';
         } else {
           type = 'Other';
         }
+        category = tx.FROM_ACCOUNT_NAME || 'Transfer';
+        subCategory = tx.TO_ACCOUNT_NAME || '';
+        accountId = tx.FROM_ACCOUNT_ID?.toString() || '';
+        accountName = tx.FROM_ACCOUNT_NAME || '';
+        investmentAccountId = tx.TO_ACCOUNT_ID?.toString() || '';
+        investmentAccountName = tx.TO_ACCOUNT_NAME || '';
       }
 
       return {
@@ -97,7 +142,16 @@ async function fetchCreditCardTransactionsFromDB(
         date: new Date(tx.DATE).toISOString().split('T')[0],
         description: tx.NOTES || 'No Description',
         amount: tx.AMOUNT,
-        type
+        type,
+        category,
+        subCategory,
+        accountId,
+        accountName,
+        categoryId: tx.CATEGORY_ID?.toString() || '',
+        subCategoryId: tx.SUB_CATEGORY_ID?.toString() || '',
+        investmentAccountId,
+        investmentAccountName,
+        capId: tx.CAP_ID?.toString() || undefined,
       };
     });
   } catch (error) {
