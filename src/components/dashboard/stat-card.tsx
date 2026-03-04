@@ -1,9 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUp, ArrowDown, CreditCard as DefaultCreditCardIcon, Landmark } from "lucide-react";
+import { ArrowUp, ArrowDown, CreditCard as DefaultCreditCardIcon, Landmark, MoreVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface StatCardProps {
   title?: string;
@@ -83,22 +89,31 @@ export function StatCard(props: StatCardProps) {
                 {props.creditCardLogoIcon && <img
                             src={props.creditCardLogoIcon}
                             alt={creditCardName || "credit_card Logo"}
-                            className="h-16 w-16 object-contain"
+                            className="h-16 w-16 object-contain flex-shrink-0"
                           />}
                 {creditCardName && <h3 className="text font-semibold text-foreground">{creditCardName}</h3>}
             </div>
-            <div className="flex gap-2">
-              {onViewCaps && (
-                <Button variant="outline" size="sm" onClick={onViewCaps}>
-                  View Caps
-                </Button>
-              )}
-              {onViewTransactions && (
-                <Button variant="outline" size="sm" onClick={onViewTransactions}>
-                  View Trans
-                </Button>
-              )}
-            </div>
+            {(onViewCaps || onViewTransactions) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    Options <MoreVertical className="ml-1 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {onViewTransactions && (
+                    <DropdownMenuItem onClick={onViewTransactions}>
+                      View Transactions
+                    </DropdownMenuItem>
+                  )}
+                  {onViewCaps && (
+                    <DropdownMenuItem onClick={onViewCaps}>
+                      View Caps
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
           <div className="flex-grow">
             {usedAmountText && (
@@ -128,9 +143,18 @@ export function StatCard(props: StatCardProps) {
               {bankName && <h3 className="text-lg font-semibold text-foreground">{bankName}</h3>}
             </div>
             {onViewTransactions && (
-              <Button variant="outline" size="sm" onClick={onViewTransactions}>
-                View Trans
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    Options <MoreVertical className="ml-1 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={onViewTransactions}>
+                    View Transactions
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
           <div className="flex-grow flex items-end">
