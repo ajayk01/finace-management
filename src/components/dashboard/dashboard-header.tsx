@@ -69,7 +69,6 @@ interface DashboardHeaderProps {
   onInvestmentAdded: (newInvestment: Transaction, fromAccountId: string) => void;
   onPaymentMade: (payment: Transaction, fromBankId: string, toCreditCardId: string, amount: number) => void;
   onTransferAdded?: (newTransfer: Transaction, fromAccountId: string, toAccountId: string) => void;
-  onOpenSplitwiseDialog: () => void;
   onOpenAllTransactionsDialog?: () => void;
 }
 
@@ -86,7 +85,6 @@ export function DashboardHeader({
     onInvestmentAdded,
     onPaymentMade,
     onTransferAdded,
-    onOpenSplitwiseDialog,
     onOpenAllTransactionsDialog
 }: DashboardHeaderProps) {
   const router = useRouter();
@@ -186,7 +184,7 @@ export function DashboardHeader({
                     <DropdownMenuItem onClick={() => setIsAddAccountOpen(true)}>Add Account</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsAddTransferOpen(true)}>Add Transfer</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsAddCapOpen(true)}>Add Cap</DropdownMenuItem>
-                    <DropdownMenuItem onClick={onOpenSplitwiseDialog}>Splitwise</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push('/splitwise')}>Splitwise</DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={onOpenAllTransactionsDialog}>Get All Transactions</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setIsUnauditedExpenseOpen(true)}>Unaudited Expense</DropdownMenuItem>

@@ -15,8 +15,6 @@ import { AlertCircle } from "lucide-react";
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { Category, SubCategory, Account } from "@/components/dashboard/add-expense-dialog";
 import type { InvestmentCategory } from "@/components/dashboard/add-investment-dialog";
-import { SplitwiseDialog } from "@/components/dashboard/splitwise-dialog";
-import type { FriendBalance } from "@/components/dashboard/splitwise-dialog";
 import { ViewCapsDialog } from "@/components/dashboard/view-caps-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { parse } from 'date-fns';
@@ -229,12 +227,6 @@ export default function DashboardPage() {
   
   // State for investment calculator dialog
   const [isInvestmentCalculatorOpen, setIsInvestmentCalculatorOpen] = useState(false);
-  
-  // State for Splitwise dialog
-  const [isSplitwiseDialogOpen, setIsSplitwiseDialogOpen] = useState(false);
-  const [isFriendsBalanceLoading, setIsFriendsBalanceLoading] = useState(false);
-  const [friendsBalanceError, setFriendsBalanceError] = useState<string | null>(null);
-  const [friendsBalance, setFriendsBalance] = useState<FriendBalance[]>([]);
   
   // State for All Transactions dialog
   const [isAllTransactionsDialogOpen, setIsAllTransactionsDialogOpen] = useState(false);
@@ -562,58 +554,7 @@ export default function DashboardPage() {
     fetchSummaryData();
   }, [selectedSummaryYear]);
 
-  const fetchFriendsBalance = useCallback(async (forceRefresh: boolean = false) => {
-    setIsFriendsBalanceLoading(true);
-    setFriendsBalanceError(null);
-    try {
-      const url = forceRefresh ? '/api/friends-balance?refresh=true' : '/api/friends-balance';
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error('Failed to fetch friends balance');
-      }
-      const data = await res.json();
-      setFriendsBalance(data.friends || []);
-    } catch (error) {
-      setFriendsBalanceError(error instanceof Error ? error.message : "An unknown error occurred");
-    } finally {
-      setIsFriendsBalanceLoading(false);
-    }
-  }, []);
-
   // --- Event Handlers ---
-  const handleOpenSplitwiseDialog = useCallback(async () => {
-    setIsSplitwiseDialogOpen(true);
-    await fetchFriendsBalance();
-  }, [fetchFriendsBalance]);
-
-  const handleRefreshSplitwiseData = useCallback(async () => {
-    await fetchFriendsBalance(true); // Force refresh
-  }, [fetchFriendsBalance]);
-
-  const handleSyncSplitwise = useCallback(async () => {
-    try {
-      const response = await fetch('/api/splitwise-sync');
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to sync Splitwise data');
-      }
-
-      const data = await response.json();
-      console.log('Splitwise sync result:', data);
-      
-      // After successful sync, refresh the friends balance data
-      await fetchFriendsBalance(true);
-      
-      // You can show a success message here if needed
-      alert(`Successfully synced ${data.notificationsCount} notification(s) from Splitwise.`);
-      
-    } catch (error) {
-      console.error('Error syncing Splitwise:', error);
-      alert('Failed to sync Splitwise data. Please try again.');
-    }
-  }, [fetchFriendsBalance]);
-
   const handleViewBankTransactions = async (account: BankAccount) => {
     setTransactionDialogTitle(`All Transactions for ${account.name}`);
     setSelectedAccountId(account.id);
@@ -955,7 +896,6 @@ export default function DashboardPage() {
         onIncomeAdded={handleIncomeAdded}
         onInvestmentAdded={handleInvestmentAdded}
         onPaymentMade={handlePaymentMade}
-        onOpenSplitwiseDialog={handleOpenSplitwiseDialog}
         onOpenAllTransactionsDialog={() => setIsAllTransactionsDialogOpen(true)}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
@@ -1175,20 +1115,6 @@ export default function DashboardPage() {
         onOpenChange={setIsInvestmentCalculatorOpen}
         investmentAccounts={investmentCategories}
         onXirrCalculated={handleXirrCalculated}
-      />
-      <SplitwiseDialog
-        open={isSplitwiseDialogOpen}
-        onOpenChange={setIsSplitwiseDialogOpen}
-        data={friendsBalance}
-        isLoading={isFriendsBalanceLoading}
-        error={friendsBalanceError}
-        onRefresh={handleRefreshSplitwiseData}
-        onSync={handleSyncSplitwise}
-        bankAccounts={apiBankAccounts.map(account => ({
-          id: account.id,
-          name: account.name,
-        }))}
-        categories={fullExpenseCategories}
       />
       <AllTransactionsDialog
         open={isAllTransactionsDialogOpen}

@@ -14,7 +14,7 @@ interface UnsettledExpenseInput {
 
 export async function POST(request: NextRequest) {
   try {
-    const { friendId, bankAccountId, unsettledExpenses } = await request.json();
+    const { friendId, bankAccountId, unsettledExpenses, settledTransactionIds } = await request.json();
     console.log(" unsettledExpenses ",unsettledExpenses);
     if (!friendId || !bankAccountId) {
       return NextResponse.json({ 
@@ -99,8 +99,27 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Fetch all previously settled transactions for this friend (where TRANSACTION_ID is not null)
-    const fetchTransactionsSql = `
+    // Fetch previously settled transactions for this friend (where TRANSACTION_ID is not null)
+    // If settledTransactionIds provided, only fetch those specific transactions
+    const hasSpecificIds = Array.isArray(settledTransactionIds) && settledTransactionIds.length > 0;
+    const fetchTransactionsSql = hasSpecificIds
+      ? `
+      SELECT 
+        st.SPLITWISE_TRANSACTION_ID as SPLITWISE_TX_ID,
+        st.TRANSACTION_ID,
+        st.SPLITED_AMOUNT,
+        t.DATE,
+        t.NOTES,
+        t.CATEGORY_ID,
+        t.SUB_CATEGORY_ID,
+        sf.NAME as FRIEND_NAME
+      FROM SplitwiseTransactions st
+      INNER JOIN Transactions t ON st.TRANSACTION_ID = t.ID
+      INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
+      WHERE st.FRIEND_ID = ? AND st.TRANSACTION_ID IN (${settledTransactionIds.map(() => '?').join(',')})
+      ORDER BY t.DATE ASC
+    `
+      : `
       SELECT 
         st.SPLITWISE_TRANSACTION_ID as SPLITWISE_TX_ID,
         st.TRANSACTION_ID,
@@ -126,7 +145,7 @@ export async function POST(request: NextRequest) {
       CATEGORY_ID: number | null;
       SUB_CATEGORY_ID: number | null;
       FRIEND_NAME: string;
-    }>(fetchTransactionsSql, [friendDbId]);
+    }>(fetchTransactionsSql, hasSpecificIds ? [friendDbId, ...settledTransactionIds.map((id: string) => parseInt(id))] : [friendDbId]);
 
     console.log(`Found ${transactions.length} settled transactions for friend ID ${friendDbId}`);
 
