@@ -43,16 +43,25 @@ async function addSplitwiseExpense({ amount, description, groupId, userIds, spli
     formData.append('split_equally', useEqualSplit ? 'true' : 'false');
     
     if (useEqualSplit) {
-        // Equal split logic
+        // Equal split logic with proper rounding to avoid decimal mismatch
         const totalUsers = userIds.length;
-        const splitAmount = (amount / totalUsers).toFixed(2);
+        const totalCents = Math.round(amount * 100);
+        const baseCents = Math.floor(totalCents / totalUsers);
+        const remainderCents = totalCents - (baseCents * totalUsers);
+        
+        // Build per-user amounts: first 'remainderCents' users get 1 extra cent
+        const perUserAmounts: string[] = userIds.map((_, index) => {
+            const cents = baseCents + (index < remainderCents ? 1 : 0);
+            return (cents / 100).toFixed(2);
+        });
         
         // Current user (who paid the expense)
         formData.append('users__0__user_id', CURRENT_USER_ID);
         formData.append('users__0__paid_share', amount.toString());
-        if (userIds.includes(CURRENT_USER_ID)) 
+        const currentUserIdx = userIds.indexOf(CURRENT_USER_ID);
+        if (currentUserIdx !== -1) 
         {
-            formData.append('users__0__owed_share', splitAmount);
+            formData.append('users__0__owed_share', perUserAmounts[currentUserIdx]);
         } 
         
         userIds.forEach((userId, index) => 
@@ -64,7 +73,7 @@ async function addSplitwiseExpense({ amount, description, groupId, userIds, spli
             const userIndex = index + 1;
             formData.append(`users__${userIndex}__user_id`, userId);
             formData.append(`users__${userIndex}__paid_share`, '0.00');
-            formData.append(`users__${userIndex}__owed_share`, splitAmount);
+            formData.append(`users__${userIndex}__owed_share`, perUserAmounts[index]);
         });
     } else {
         // Custom amounts logic
@@ -315,18 +324,21 @@ export async function POST(request: NextRequest)
             } 
             else 
             {
-                // Calculate equal share for each user (default or when splitType is 'equal')
-                const perUserAmount = Math.ceil(amount / splitwiseUserIds.length);
-                splitAmt = perUserAmount * splitwiseUserIds.length;
-                console.log("perUserAmount:", perUserAmount);
+                // Calculate equal share for each user with proper rounding
+                // Floor to 2 decimal places, then distribute remainder cents to first user(s)
+                const totalCents = Math.round(amount * 100);
+                const baseCents = Math.floor(totalCents / splitwiseUserIds.length);
+                const remainderCents = totalCents - (baseCents * splitwiseUserIds.length);
                 
-                // Create customAmounts object with equal shares
                 customAmounts = {};
-                for (const userId of splitwiseUserIds) 
-                {
-                    customAmounts[userId] = perUserAmount;
-                }
-                console.log('Created equal shares customAmounts:', customAmounts);
+                splitwiseUserIds.forEach((userId, index) => {
+                    // First 'remainderCents' users get 1 extra cent
+                    const userCents = baseCents + (index < remainderCents ? 1 : 0);
+                    customAmounts![userId] = userCents / 100;
+                });
+                
+                splitAmt = Object.values(customAmounts).reduce((sum, amt) => sum + amt, 0);
+                console.log('Created equal shares with rounding adjustment, customAmounts:', customAmounts, 'total:', splitAmt);
             }
         }
 

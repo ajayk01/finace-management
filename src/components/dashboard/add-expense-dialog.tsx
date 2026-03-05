@@ -315,10 +315,16 @@ export function AddExpenseDialog({
   // Reset custom amounts when users change
   useEffect(() => {
     if (splitType === 'custom' && selectedSplitwiseUsers.length > 0 && totalAmount > 0) {
-      const equalAmount = totalAmount / selectedSplitwiseUsers.length;
       const newCustomAmounts: Record<string, number> = {};
-      selectedSplitwiseUsers.forEach(userId => {
-        newCustomAmounts[userId] = customAmounts[userId] || Number(equalAmount.toFixed(2));
+      // Calculate equal split with proper rounding for decimal amounts
+      const totalCents = Math.round(totalAmount * 100);
+      const baseCents = Math.floor(totalCents / selectedSplitwiseUsers.length);
+      const remainderCents = totalCents - (baseCents * selectedSplitwiseUsers.length);
+      
+      selectedSplitwiseUsers.forEach((userId, index) => {
+        // First 'remainderCents' users get 1 extra cent to account for rounding
+        const userCents = baseCents + (index < remainderCents ? 1 : 0);
+        newCustomAmounts[userId] = customAmounts[userId] || (userCents / 100);
       });
       setCustomAmounts(newCustomAmounts);
       form.setValue('customAmounts', newCustomAmounts);
