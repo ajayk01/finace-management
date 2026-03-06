@@ -28,7 +28,12 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import type { Transaction } from '@/app/page';
 
 interface CreditCard {
@@ -59,6 +64,8 @@ const paymentSchema = z.object({
     return !isNaN(num) && num > 0;
   }, "Amount must be a positive number"),
   bankAccountId: z.string().min(1, "Please select a bank account"),
+  date: z.date({ required_error: "Please select a date" }),
+  time: z.string().min(1, "Please enter a time"),
   description: z.string().optional(),
 });
 
@@ -80,6 +87,8 @@ export function PayCCBillDialog({
       creditCardId: "",
       amount: "",
       bankAccountId: "",
+      date: new Date(),
+      time: format(new Date(), "HH:mm"),
       description: "",
     },
   });
@@ -124,6 +133,12 @@ export function PayCCBillDialog({
           creditCardId: data.creditCardId,
           bankAccountId: data.bankAccountId,
           amount: amount,
+          date: (() => {
+            const [hours, minutes] = data.time.split(':').map(Number);
+            const d = new Date(data.date);
+            d.setHours(hours, minutes, 0, 0);
+            return d.getTime();
+          })(),
           description: data.description || `Credit card payment for ${creditCard.name}`,
         }),
       });
@@ -136,9 +151,12 @@ export function PayCCBillDialog({
       const result = await response.json();
 
       // Create transaction object for parent component
+      const dateWithTime = new Date(data.date);
+      const [h, m] = data.time.split(':').map(Number);
+      dateWithTime.setHours(h, m, 0, 0);
       const transaction: Transaction = {
         id: result.transactionId || Date.now().toString(),
-        date: new Date().toISOString(),
+        date: dateWithTime.toISOString(),
         description: data.description || `Credit card payment for ${creditCard.name}`,
         amount: amount,
         type: 'Transfer',
@@ -253,6 +271,58 @@ export function PayCCBillDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="date"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Date</FormLabel>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full pl-3 text-left font-normal",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={field.value}
+                        onSelect={field.onChange}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="time"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Time</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="time"
+                      {...field}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

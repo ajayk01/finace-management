@@ -20,7 +20,13 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { CalendarIcon } from 'lucide-react';
+import { format } from 'date-fns';
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import {
   Table,
   TableBody,
@@ -97,6 +103,8 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingTransactions, setIsFetchingTransactions] = useState(false);
   const [isFetchingUnsettled, setIsFetchingUnsettled] = useState(false);
+  const [settlementDate, setSettlementDate] = useState<Date>(new Date());
+  const [settlementTime, setSettlementTime] = useState<string>(format(new Date(), 'HH:mm'));
   const { toast } = useToast();
 
   // Fetch transactions when friend is selected
@@ -216,6 +224,12 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
       const payload = {
         friendId: selectedFriend.friendId,
         bankAccountId: selectedBankAccount,
+        date: (() => {
+          const [hours, minutes] = settlementTime.split(':').map(Number);
+          const d = new Date(settlementDate);
+          d.setHours(hours, minutes, 0, 0);
+          return d.getTime();
+        })(),
         unsettledExpenses: unsettledExpenses.map(exp => ({
           splitwiseTransactionId: exp.splitwiseTransactionId,
           date: exp.date,
@@ -253,6 +267,8 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
       setTransactions([]);
       setUnsettledExpenses([]);
       setExpenseSelections({});
+      setSettlementDate(new Date());
+      setSettlementTime(format(new Date(), 'HH:mm'));
       onOpenChange(false);
 
     } catch (error) {
@@ -332,6 +348,43 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Settlement Date */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Settlement Date</label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full pl-3 text-left font-normal",
+                    !settlementDate && "text-muted-foreground"
+                  )}
+                >
+                  {settlementDate ? format(settlementDate, "PPP") : <span>Pick a date</span>}
+                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={settlementDate}
+                  onSelect={(date) => date && setSettlementDate(date)}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {/* Settlement Time */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Settlement Time</label>
+            <Input
+              type="time"
+              value={settlementTime}
+              onChange={(e) => setSettlementTime(e.target.value)}
+            />
           </div>
 
           {/* Unsettled Expenses - Need Category Selection */}

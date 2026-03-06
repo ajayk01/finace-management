@@ -14,7 +14,7 @@ interface UnsettledExpenseInput {
 
 export async function POST(request: NextRequest) {
   try {
-    const { friendId, bankAccountId, unsettledExpenses, settledTransactionIds } = await request.json();
+    const { friendId, bankAccountId, unsettledExpenses, settledTransactionIds, date } = await request.json();
     console.log(" unsettledExpenses ",unsettledExpenses);
     if (!friendId || !bankAccountId) {
       return NextResponse.json({ 
@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
     
     let friendName = friendResult[0].NAME;
 
-    // Current settled date/time
-    const settledDate = Date.now();
+    // Use provided date or current date/time
+    const settledDate = date || Date.now();
 
     // Collect all splits to process and calculate total settlement amount
     let totalSettlementAmount = 0;

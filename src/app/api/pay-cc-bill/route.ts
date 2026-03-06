@@ -8,6 +8,7 @@ const paymentSchema = z.object({
   creditCardId: z.string().min(1),
   bankAccountId: z.string().min(1),
   amount: z.number().positive(),
+  date: z.number().optional(),
   description: z.string().optional(),
 });
 
@@ -15,9 +16,10 @@ async function createCreditCardPaymentTransaction(
   creditCardId: string,
   bankAccountId: string,
   amount: number,
-  description?: string
+  description?: string,
+  date?: number
 ): Promise<number> {
-  const epochTime = Date.now(); // Current timestamp in milliseconds
+  const epochTime = date || Date.now(); // Use provided date or current timestamp
   const notes = description || `Credit card payment - ₹${amount}`;
   
   const result = await query(
@@ -86,7 +88,8 @@ export async function POST(request: NextRequest) {
       creditCardId,
       bankAccountId,
       amount,
-      "CC BILL PAYMENT"
+      "CC BILL PAYMENT",
+      parsedData.date
     );
 
     // Reset cap consumed amount if full amount is being paid

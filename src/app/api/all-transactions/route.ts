@@ -102,6 +102,7 @@ async function fetchAllTransactionsFromDB({
 
     return transactions
       .filter((tx: any) => tx.AMOUNT !== 0)
+      .filter((tx: any) => tx.FROM_ACCOUNT_ID != null || tx.TO_ACCOUNT_ID != null)
       .map((tx: any) => {
         let type: 'Income' | 'Expense' | 'Investment' | 'Transfer' = 'Expense';
         let category = '';
