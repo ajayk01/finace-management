@@ -193,6 +193,39 @@ export async function GET(request: NextRequest) {
   }
 }
 
+async function deleteSingleTransaction(transactionId: number) {
+  // Check for linked Splitwise transactions and delete the expense from Splitwise API
+  const splitwiseRows = await query<{ SPLITWISE_TRANSACTION_ID: string }>(
+    `SELECT DISTINCT SPLITWISE_TRANSACTION_ID FROM SplitwiseTransactions WHERE TRANSACTION_ID = ?`,
+    [transactionId]
+  );
+
+  if (splitwiseRows.length > 0) {
+    const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
+    if (SPLITWISE_API_KEY) {
+      for (const row of splitwiseRows) {
+        try {
+          const res = await fetch(
+            `https://secure.splitwise.com/api/v3.0/delete_expense/${row.SPLITWISE_TRANSACTION_ID}`,
+            {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${SPLITWISE_API_KEY}` },
+            }
+          );
+          if (res.ok) {
+            console.log(`✅ Deleted Splitwise expense ${row.SPLITWISE_TRANSACTION_ID}`);
+          } else {
+            console.warn(`⚠️ Failed to delete Splitwise expense ${row.SPLITWISE_TRANSACTION_ID}: ${res.status}`);
+          }
+        } catch (swError) {
+          console.warn(`⚠️ Error deleting Splitwise expense ${row.SPLITWISE_TRANSACTION_ID}:`, swError);
+        }
+      }
+    }
+  }
+  await query(`DELETE FROM Transactions WHERE ID = ?`, [transactionId]);
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -203,42 +236,52 @@ export async function DELETE(request: NextRequest) {
     }
 
     const transactionId = parseInt(id, 10);
-
-    // Check for linked Splitwise transactions and delete the expense from Splitwise API
-    const splitwiseRows = await query<{ SPLITWISE_TRANSACTION_ID: string }>(
-      `SELECT DISTINCT SPLITWISE_TRANSACTION_ID FROM SplitwiseTransactions WHERE TRANSACTION_ID = ?`,
-      [transactionId]
-    );
-
-    if (splitwiseRows.length > 0) {
-      const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
-      if (SPLITWISE_API_KEY) {
-        for (const row of splitwiseRows) {
-          try {
-            const res = await fetch(
-              `https://secure.splitwise.com/api/v3.0/delete_expense/${row.SPLITWISE_TRANSACTION_ID}`,
-              {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${SPLITWISE_API_KEY}` },
-              }
-            );
-            if (res.ok) {
-              console.log(`✅ Deleted Splitwise expense ${row.SPLITWISE_TRANSACTION_ID}`);
-            } else {
-              console.warn(`⚠️ Failed to delete Splitwise expense ${row.SPLITWISE_TRANSACTION_ID}: ${res.status}`);
-            }
-          } catch (swError) {
-            console.warn(`⚠️ Error deleting Splitwise expense ${row.SPLITWISE_TRANSACTION_ID}:`, swError);
-          }
-        }
-      }
-    }
-    await query(`DELETE FROM Transactions WHERE ID = ?`, [transactionId]);
+    await deleteSingleTransaction(transactionId);
 
     return NextResponse.json({ success: true, message: "Transaction deleted successfully" });
   } catch (error) {
     console.error("Error deleting transaction:", error);
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while deleting transaction.";
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+
+    if (body.action === 'bulk-delete') {
+      const ids: number[] = body.ids;
+
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return NextResponse.json({ error: "An array of transaction IDs is required" }, { status: 400 });
+      }
+
+      let deletedCount = 0;
+      const errors: string[] = [];
+
+      for (const id of ids) {
+        try {
+          await deleteSingleTransaction(id);
+          deletedCount++;
+        } catch (err) {
+          console.error(`Error deleting transaction ${id}:`, err);
+          errors.push(`Failed to delete transaction ${id}`);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `${deletedCount} transaction(s) deleted successfully`,
+        deletedCount,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    }
+
+    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+  } catch (error) {
+    console.error("Error in POST /api/all-transactions:", error);
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

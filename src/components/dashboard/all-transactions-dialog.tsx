@@ -51,6 +51,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { CalendarIcon, Loader2, Edit2, Trash2, Copy, X } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -134,6 +135,9 @@ export function AllTransactionsDialog({
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [investmentAccounts, setInvestmentAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'All' | 'Income' | 'Expense' | 'Investment'>('All');
   const [accountFilter, setAccountFilter] = useState<string>('All');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -172,8 +176,78 @@ export function AllTransactionsDialog({
     }
   }, [open, selectedMonth, selectedYear]);
 
+  // Compute the filtered transactions list
+  const filteredTransactions = transactions
+    .filter(tx => typeFilter === 'All' || tx.type === typeFilter)
+    .filter(tx => accountFilter === 'All' || tx.accountId === accountFilter);
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(filteredTransactions.map(tx => tx.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkDeleteConfirm = async () => {
+    if (selectedIds.size === 0) return;
+
+    setIsBulkDeleting(true);
+    try {
+      const res = await fetch('/api/all-transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'bulk-delete',
+          ids: Array.from(selectedIds).map(Number),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        toast({
+          title: "Success",
+          description: data.message || `${selectedIds.size} transaction(s) deleted`,
+        });
+        setSelectedIds(new Set());
+        fetchTransactions();
+        onTransactionUpdated?.();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: data.error || "Failed to delete transactions",
+        });
+      }
+    } catch (error) {
+      console.error("Error bulk deleting transactions:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "An error occurred while deleting transactions",
+      });
+    } finally {
+      setIsBulkDeleting(false);
+      setBulkDeleteConfirmOpen(false);
+    }
+  };
+
   const fetchTransactions = async () => {
     setIsLoading(true);
+    setSelectedIds(new Set());
     try {
       const res = await fetch(`/api/all-transactions?month=${selectedMonth}&year=${selectedYear}`);
       const data = await res.json();
@@ -629,6 +703,28 @@ export function AllTransactionsDialog({
               </div>
             </div>
           </DialogHeader>
+          {selectedIds.size > 0 && (
+            <div className="px-6 pb-2 flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">
+                {selectedIds.size} transaction{selectedIds.size > 1 ? 's' : ''} selected
+              </span>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setBulkDeleteConfirmOpen(true)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Bulk Delete
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Clear Selection
+              </Button>
+            </div>
+          )}
           <div className="flex-1 overflow-y-auto px-6 pb-6">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
@@ -643,6 +739,16 @@ export function AllTransactionsDialog({
                 <Table>
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={
+                            filteredTransactions.length > 0 &&
+                            filteredTransactions.every(tx => selectedIds.has(tx.id))
+                          }
+                          onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                          aria-label="Select all"
+                        />
+                      </TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Description</TableHead>
@@ -653,11 +759,15 @@ export function AllTransactionsDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transactions
-                      .filter(tx => typeFilter === 'All' || tx.type === typeFilter)
-                      .filter(tx => accountFilter === 'All' || tx.accountId === accountFilter)
-                      .map((transaction) => (
-                      <TableRow key={transaction.id}>
+                    {filteredTransactions.map((transaction) => (
+                      <TableRow key={transaction.id} className={selectedIds.has(transaction.id) ? 'bg-muted/50' : ''}>
+                        <TableCell className="w-10">
+                          <Checkbox
+                            checked={selectedIds.has(transaction.id)}
+                            onCheckedChange={(checked) => handleSelectOne(transaction.id, !!checked)}
+                            aria-label={`Select transaction ${transaction.id}`}
+                          />
+                        </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {transaction.date || 'N/A'}
                         </TableCell>
@@ -761,6 +871,29 @@ export function AllTransactionsDialog({
           {renderDuplicateForm()}
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} transaction{selectedIds.size > 1 ? 's' : ''}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the selected transaction{selectedIds.size > 1 ? 's' : ''}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDeleteConfirm}
+              disabled={isBulkDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isBulkDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete {selectedIds.size} transaction{selectedIds.size > 1 ? 's' : ''}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
