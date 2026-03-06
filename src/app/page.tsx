@@ -16,6 +16,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { Category, SubCategory, Account } from "@/components/dashboard/add-expense-dialog";
 import type { InvestmentCategory } from "@/components/dashboard/add-investment-dialog";
 import { ViewCapsDialog } from "@/components/dashboard/view-caps-dialog";
+import { PayCCBillDialog } from "@/components/dashboard/pay-cc-bill-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { parse } from 'date-fns';
 
@@ -234,6 +235,10 @@ export default function DashboardPage() {
   // State for View Caps dialog
   const [isViewCapsDialogOpen, setIsViewCapsDialogOpen] = useState(false);
   const [selectedCreditCardForCaps, setSelectedCreditCardForCaps] = useState<{id: string, name: string} | null>(null);
+
+  // State for Pay CC Bill dialog (from credit card stat card)
+  const [isPayCCBillDialogOpen, setIsPayCCBillDialogOpen] = useState(false);
+  const [selectedCreditCardForPayment, setSelectedCreditCardForPayment] = useState<string | undefined>(undefined);
   
   const availableYears = useMemo(() => getAvailableYears(), []);
   
@@ -631,6 +636,11 @@ export default function DashboardPage() {
     setIsViewCapsDialogOpen(true);
   };
 
+  const handlePayCCBill = (card: CreditCardAccount) => {
+    setSelectedCreditCardForPayment(card.id);
+    setIsPayCCBillDialogOpen(true);
+  };
+
   // Helper to re-fetch the current transaction dialog's data
   const refetchCurrentTransactions = useCallback(async () => {
     if (!selectedAccountId || !transactionEntityType) return;
@@ -932,6 +942,7 @@ export default function DashboardPage() {
                       totalLimitText={`Total Limit : ${formatIndianCurrency(card.totalLimit)}`} 
                       onViewTransactions={() => handleViewCreditCardTransactions(card)} 
                       onViewCaps={() => handleViewCaps(card)}
+                      onPayCCBill={() => handlePayCCBill(card)}
                     />
                   ))}
                 </div>
@@ -1147,6 +1158,27 @@ export default function DashboardPage() {
         onOpenChange={setIsViewCapsDialogOpen}
         creditCardId={selectedCreditCardForCaps?.id || ''}
         creditCardName={selectedCreditCardForCaps?.name || ''}
+      />
+
+      <PayCCBillDialog
+        open={isPayCCBillDialogOpen}
+        onOpenChange={(open) => {
+          setIsPayCCBillDialogOpen(open);
+          if (!open) setSelectedCreditCardForPayment(undefined);
+        }}
+        creditCards={apiCreditCards.map(card => ({
+          id: card.id,
+          name: card.name,
+          usedAmount: card.usedAmount,
+          totalLimit: card.totalLimit,
+        }))}
+        bankAccounts={apiBankAccounts.map(acc => ({
+          id: acc.id,
+          name: acc.name,
+          balance: acc.balance,
+        }))}
+        onPaymentMade={handlePaymentMade}
+        defaultCreditCardId={selectedCreditCardForPayment}
       />
 
       {/* Edit/Duplicate dialogs for TransactionDialog (Bank/CC transactions) */}

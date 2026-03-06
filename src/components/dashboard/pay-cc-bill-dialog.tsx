@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -55,6 +55,7 @@ interface PayCCBillDialogProps {
   creditCards: CreditCard[];
   bankAccounts: BankAccount[];
   onPaymentMade: (payment: Transaction, fromBankId: string, toCreditCardId: string, amount: number) => void;
+  defaultCreditCardId?: string;
 }
 
 const paymentSchema = z.object({
@@ -77,6 +78,7 @@ export function PayCCBillDialog({
   creditCards,
   bankAccounts,
   onPaymentMade,
+  defaultCreditCardId,
 }: PayCCBillDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
@@ -92,6 +94,14 @@ export function PayCCBillDialog({
       description: "",
     },
   });
+
+  // Pre-select credit card when defaultCreditCardId is provided
+  useEffect(() => {
+    if (open && defaultCreditCardId) {
+      form.setValue("creditCardId", defaultCreditCardId);
+      handleCreditCardChange(defaultCreditCardId);
+    }
+  }, [open, defaultCreditCardId]);
 
   const selectedCreditCardId = form.watch("creditCardId");
   const selectedCreditCard = creditCards.find(card => card.id === selectedCreditCardId);

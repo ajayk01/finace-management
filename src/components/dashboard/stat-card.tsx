@@ -30,6 +30,7 @@ interface StatCardProps {
   usedAmountText?: string;
   totalLimitText?: string;
   onViewCaps?: () => void;
+  onPayCCBill?: () => void;
 }
 
 export function StatCard(props: StatCardProps) {
@@ -51,6 +52,7 @@ export function StatCard(props: StatCardProps) {
     usedAmountText,
     totalLimitText,
     onViewCaps,
+    onPayCCBill,
   } = props;
 
   const CreditCardLogoIconComponent = CreditCardLogoIconComponentFromProp || DefaultCreditCardIcon;
@@ -93,7 +95,7 @@ export function StatCard(props: StatCardProps) {
                           />}
                 {creditCardName && <h3 className="text font-semibold text-foreground">{creditCardName}</h3>}
             </div>
-            {(onViewCaps || onViewTransactions) && (
+            {(onViewCaps || onViewTransactions || onPayCCBill) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm">
@@ -109,6 +111,11 @@ export function StatCard(props: StatCardProps) {
                   {onViewCaps && (
                     <DropdownMenuItem onClick={onViewCaps}>
                       View Caps
+                    </DropdownMenuItem>
+                  )}
+                  {onPayCCBill && (
+                    <DropdownMenuItem onClick={onPayCCBill}>
+                      Pay CC Bill
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
