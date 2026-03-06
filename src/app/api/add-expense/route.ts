@@ -208,36 +208,84 @@ async function createExpenseTransaction({
 }
 
 /**
- * Create Splitwise transaction record in database
+ * Create a dummy transaction in Transactions table for splitwise split tracking.
+ * Amount is 0, account is null. Will be updated during settle-up.
+ */
+async function createDummyTransaction({
+    date,
+    description,
+    categoryId,
+    subCategoryId,
+}: {
+    date: string;
+    description?: string;
+    categoryId?: string;
+    subCategoryId?: string;
+}): Promise<number> {
+    const epochTime = new Date(date).getTime();
+    
+    const sql = `
+        INSERT INTO Transactions (
+            DATE, 
+            NOTES, 
+            AMOUNT, 
+            FROM_ACCOUNT_ID, 
+            CATEGORY_ID, 
+            SUB_CATEGORY_ID, 
+            TRANSCATION_TYPE
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    const result: any = await query(sql, [
+        epochTime,
+        description || '',
+        0, // Amount is 0 for dummy transaction
+        null, // Account is null for dummy transaction
+        categoryId ? parseInt(categoryId) : null,
+        subCategoryId ? parseInt(subCategoryId) : null,
+        TransactionType.EXPENSE
+    ]);
+    
+    const insertedId = result?.insertId || result?.[0]?.insertId || 0;
+    console.log(`✅ Created dummy transaction with ID: ${insertedId}`);
+    return insertedId;
+}
+
+/**
+ * Create Splitwise transaction record in database with a linked dummy transaction
  */
 async function createSplitwiseTransaction({
     transactionId,
     friendId,
     amount,
     splitwiseTransactionId,
+    splitedTransactionId,
 }: {
     transactionId: number;
     friendId: string;
     amount: number;
     splitwiseTransactionId: string;
+    splitedTransactionId: number;
 }): Promise<void> {
     const sql = `
         INSERT INTO SplitwiseTransactions (
             SPLITWISE_TRANSACTION_ID,
             TRANSACTION_ID,
             FRIEND_ID,
-            SPLITED_AMOUNT
-        ) VALUES (?, ?, ?, ?)
+            SPLITED_AMOUNT,
+            SPLITED_TRANSACTION_ID
+        ) VALUES (?, ?, ?, ?, ?)
     `;
     
     await query(sql, [
         splitwiseTransactionId,
         transactionId,
         parseInt(friendId),
-        amount
+        amount,
+        splitedTransactionId
     ]);
     
-    console.log(`✅ Created Splitwise transaction for friend ${friendId}, amount: ${amount}`);
+    console.log(`✅ Created Splitwise transaction for friend ${friendId}, amount: ${amount}, dummy tx: ${splitedTransactionId}`);
 }
 
 /**
@@ -388,7 +436,16 @@ export async function POST(request: NextRequest)
                     subCategoryId
                 });
                 
-                // Create Splitwise transaction records for each friend
+                // Create ONE dummy transaction per splitwise expense (shared across all friend splits)
+                const dummyTxId = await createDummyTransaction({
+                    date,
+                    description,
+                    categoryId,
+                    subCategoryId,
+                });
+                console.log(`✅ Created one dummy transaction ${dummyTxId} for splitwise expense ${splitwiseTransactionId}`);
+                
+                // Create Splitwise transaction records for each friend, all pointing to the same dummy
                 const promises = splitwiseUserIds.map(async (userId) => {
                     if (userId.includes(CURRENT_USER_ID)) {
                         return;
@@ -410,11 +467,12 @@ export async function POST(request: NextRequest)
                         friendId: dbFriendId,
                         amount: splitAmount,
                         splitwiseTransactionId: splitwiseTransactionId!,
+                        splitedTransactionId: dummyTxId,
                     });
                 });
                 
                 await Promise.all(promises);
-                console.log('✅ Created Splitwise expense with all friend transactions');
+                console.log('✅ Created Splitwise expense with all friend splits linked to dummy transaction');
             } else {
                 // No Splitwise, just create regular expense
                 transactionId = await createExpenseTransaction({

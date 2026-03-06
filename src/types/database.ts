@@ -63,6 +63,7 @@ export interface SplitwiseTransaction {
   FRIEND_ID: number;
   TRANSACTION_ID: number;
   SPLITED_AMOUNT: number;
+  SPLITED_TRANSACTION_ID: number | null; // References the dummy transaction in Transactions table
 }
 
 export interface CreditCardDetails {

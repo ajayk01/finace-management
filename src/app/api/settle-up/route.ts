@@ -42,65 +42,55 @@ export async function POST(request: NextRequest) {
     
     let friendName = friendResult[0].NAME;
 
-    // Process unsettled expenses (new transactions from Splitwise)
+    // Current settled date/time
+    const settledDate = Date.now();
+
+    // Collect all splits to process and calculate total settlement amount
+    let totalSettlementAmount = 0;
+    const allSplitsToProcess: Array<{
+      splitwiseTransactionId: string;
+      splitedAmount: number;
+      splitedTransactionId: number | null;
+      description: string;
+      categoryId: number | null;
+      subCategoryId: number | null;
+      transactionId: number | null;
+      type: 'unsettled' | 'settled';
+    }> = [];
+
+    // 1. Gather unsettled expenses (from Splitwise sync - TRANSACTION_ID IS NULL)
     if (unsettledExpenses && Array.isArray(unsettledExpenses) && unsettledExpenses.length > 0) {
       console.log(`Processing ${unsettledExpenses.length} unsettled expenses`);
 
       for (const expense of unsettledExpenses as UnsettledExpenseInput[]) {
-        try {
-          // Validate category selection
-          if (!expense.categoryId) {
-            console.error(`Skipping expense ${expense.splitwiseTransactionId}: Missing category`);
-            continue;
-          }
-
-          // Convert date to timestamp
-          const expenseDate = new Date(expense.date).getTime();
-          
-          // Create transaction for the expense
-          const createTransactionSql = `
-            INSERT INTO Transactions 
-            (AMOUNT, DATE, NOTES, FROM_ACCOUNT_ID, CATEGORY_ID, SUB_CATEGORY_ID, TRANSCATION_TYPE) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `;
-
-          const transactionResult = await query(createTransactionSql, [
-            expense.splitedAmount,
-            expenseDate,
-            expense.description,
-            accountId, // FROM_ACCOUNT_ID for expense
-            expense.categoryId,
-            expense.subCategoryId,
-            TransactionType.EXPENSE
-          ]);
-
-          console.log(`Created transaction ID: ${transactionResult.insertId} for Splitwise expense ${expense.splitwiseTransactionId}`);
-
-          // delete SplitwiseTransactions 
-          await query(
-            `DELETE from SplitwiseTransactions 
-             WHERE SPLITWISE_TRANSACTION_ID = ? AND FRIEND_ID = ?`,
-            [expense.splitwiseTransactionId, friendDbId]
-          );
-
-          console.log(`Deleted SplitwiseTransactions for expense ${expense.splitwiseTransactionId}`);
-
-          offsetEntries.push({
-            id: transactionResult.insertId,
-            splitwiseTransactionId: expense.splitwiseTransactionId,
-            amount: expense.splitedAmount,
-            description: expense.description,
-            type: 'unsettled',
-          });
-
-        } catch (error) {
-          console.error(`Error processing unsettled expense ${expense.splitwiseTransactionId}:`, error);
+        if (!expense.categoryId) {
+          console.error(`Skipping expense ${expense.splitwiseTransactionId}: Missing category`);
+          continue;
         }
+
+        // Get the SPLITED_TRANSACTION_ID from SplitwiseTransactions
+        const stResult = await query<{ SPLITED_TRANSACTION_ID: number | null }>(
+          `SELECT SPLITED_TRANSACTION_ID FROM SplitwiseTransactions 
+           WHERE SPLITWISE_TRANSACTION_ID = ? AND FRIEND_ID = ?`,
+          [expense.splitwiseTransactionId, friendDbId]
+        );
+
+        allSplitsToProcess.push({
+          splitwiseTransactionId: expense.splitwiseTransactionId,
+          splitedAmount: expense.splitedAmount,
+          splitedTransactionId: stResult.length > 0 ? stResult[0].SPLITED_TRANSACTION_ID : null,
+          description: expense.description,
+          categoryId: expense.categoryId,
+          subCategoryId: expense.subCategoryId,
+          transactionId: null,
+          type: 'unsettled',
+        });
+
+        totalSettlementAmount += expense.splitedAmount;
       }
     }
 
-    // Fetch previously settled transactions for this friend (where TRANSACTION_ID is not null)
-    // If settledTransactionIds provided, only fetch those specific transactions
+    // 2. Gather settled transactions (where TRANSACTION_ID is not null - user already paid)
     const hasSpecificIds = Array.isArray(settledTransactionIds) && settledTransactionIds.length > 0;
     const fetchTransactionsSql = hasSpecificIds
       ? `
@@ -108,6 +98,7 @@ export async function POST(request: NextRequest) {
         st.SPLITWISE_TRANSACTION_ID as SPLITWISE_TX_ID,
         st.TRANSACTION_ID,
         st.SPLITED_AMOUNT,
+        st.SPLITED_TRANSACTION_ID,
         t.DATE,
         t.NOTES,
         t.CATEGORY_ID,
@@ -124,6 +115,7 @@ export async function POST(request: NextRequest) {
         st.SPLITWISE_TRANSACTION_ID as SPLITWISE_TX_ID,
         st.TRANSACTION_ID,
         st.SPLITED_AMOUNT,
+        st.SPLITED_TRANSACTION_ID,
         t.DATE,
         t.NOTES,
         t.CATEGORY_ID,
@@ -140,6 +132,7 @@ export async function POST(request: NextRequest) {
       SPLITWISE_TX_ID: number;
       TRANSACTION_ID: number;
       SPLITED_AMOUNT: number;
+      SPLITED_TRANSACTION_ID: number | null;
       DATE: number;
       NOTES: string;
       CATEGORY_ID: number | null;
@@ -152,57 +145,111 @@ export async function POST(request: NextRequest) {
     if (transactions.length > 0) {
       friendName = transactions[0].FRIEND_NAME;
 
-      // Process each transaction and create offsetting entry
       for (const tx of transactions) {
-        try {
-          const settlementAmount = tx.SPLITED_AMOUNT;
-          const description = tx.NOTES || 'Splitwise expense';
+        allSplitsToProcess.push({
+          splitwiseTransactionId: tx.SPLITWISE_TX_ID.toString(),
+          splitedAmount: tx.SPLITED_AMOUNT,
+          splitedTransactionId: tx.SPLITED_TRANSACTION_ID,
+          description: tx.NOTES || 'Splitwise expense',
+          categoryId: tx.CATEGORY_ID,
+          subCategoryId: tx.SUB_CATEGORY_ID,
+          transactionId: tx.TRANSACTION_ID,
+          type: 'settled',
+        });
 
-          // Create offsetting settlement entry (negative amount = income/settlement)
-          const settlementSql = `
-            INSERT INTO Transactions 
-            (AMOUNT, DATE, NOTES, FROM_ACCOUNT_ID, CATEGORY_ID, SUB_CATEGORY_ID, TRANSCATION_TYPE) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `;
-
-          const settlementResult = await query(settlementSql, [
-            -Math.abs(settlementAmount), // Negative amount = settlement received (income)
-            tx.DATE,
-            `Settlement from: ${friendName} - ${description}`,
-            accountId, // Money received in this bank account (TO_ACCOUNT_ID for income)
-            tx.CATEGORY_ID,
-            tx.SUB_CATEGORY_ID,
-            TransactionType.EXPENSE
-          ]);
-
-          console.log(`Created settlement transaction ID: ${settlementResult.insertId}`);
-
-          // Delete the Splitwise transaction entry
-          await query(
-            `DELETE FROM SplitwiseTransactions WHERE TRANSACTION_ID = ? AND FRIEND_ID = ?`,
-            [tx.TRANSACTION_ID, friendDbId]
-          );
-          console.log(`Deleted transaction ${tx.TRANSACTION_ID} for friend ID ${friendDbId} from SplitwiseTransactions`);
-
-          offsetEntries.push({
-            // id: settlementResult.insertId,
-            id:1,
-            originalTransactionId: tx.TRANSACTION_ID,
-            splitwiseTransactionId: tx.SPLITWISE_TX_ID,
-            amount: -settlementAmount,
-            description: `Settlement from: ${friendName}`,
-            type: 'settled',
-          });
-
-        } catch (error) {
-          console.error(`Error creating settlement for transaction ${tx.TRANSACTION_ID}:`, error);
-          // Continue with other transactions even if one fails
-        }
+        totalSettlementAmount += tx.SPLITED_AMOUNT;
       }
     }
 
-    const message = offsetEntries.length > 0 
-      ? `Successfully processed ${offsetEntries.length} transaction(s) for ${friendName}`
+    // 3. Create ONE settlement transaction for the total amount at the settlement date
+    if (totalSettlementAmount > 0) {
+      const appTransactionIds = allSplitsToProcess.map(s => s.splitedTransactionId).filter(Boolean).join(', ');
+      const settlementSql = `
+        INSERT INTO Transactions 
+        (AMOUNT, DATE, NOTES, FROM_ACCOUNT_ID, CATEGORY_ID, SUB_CATEGORY_ID, TRANSCATION_TYPE) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      const settlementResult = await query(settlementSql, [
+        -totalSettlementAmount,
+        settledDate,
+        `Settlement : ${friendName} [${appTransactionIds}]`,
+        accountId,
+        null, // No single category for combined settlement
+        null,
+        TransactionType.EXPENSE
+      ]);
+
+      console.log(`✅ Created ONE settlement transaction ID: ${settlementResult.insertId} for total ₹${totalSettlementAmount}`);
+
+      offsetEntries.push({
+        id: settlementResult.insertId,
+        amount: totalSettlementAmount,
+        description: `Settlement with ${friendName}`,
+        type: 'settlement',
+      });
+    }
+
+    // 4. For each split, update the dummy transaction (ADD split amount) and clean up SplitwiseTransactions
+    for (const split of allSplitsToProcess) {
+      try {
+        if (split.splitedTransactionId) {
+          // UPDATE the dummy transaction: ADD split amount to current amount, update notes
+          const updateSql = `
+            UPDATE Transactions 
+            SET AMOUNT = AMOUNT - ?, 
+                DATE = ?,
+                NOTES = CASE WHEN NOTES IS NULL OR NOTES = '' THEN CONCAT(?, ' : ', ?) ELSE CONCAT(NOTES, ', ', ?) END,
+                CATEGORY_ID = COALESCE(CATEGORY_ID, ?),
+                SUB_CATEGORY_ID = COALESCE(SUB_CATEGORY_ID, ?)
+            WHERE ID = ?
+          `;
+
+          await query(updateSql, [
+            split.splitedAmount,
+            settledDate,
+            split.splitwiseTransactionId,
+            friendName,
+            friendName,
+            split.categoryId,
+            split.subCategoryId,
+            split.splitedTransactionId
+          ]);
+
+          console.log(`Updated dummy tx ${split.splitedTransactionId}: added ₹${split.splitedAmount} for ${friendName}`);
+        }
+
+        // Delete SplitwiseTransactions row
+        if (split.type === 'unsettled') {
+          await query(
+            `DELETE FROM SplitwiseTransactions 
+             WHERE SPLITWISE_TRANSACTION_ID = ? AND FRIEND_ID = ?`,
+            [split.splitwiseTransactionId, friendDbId]
+          );
+        } else {
+          await query(
+            `DELETE FROM SplitwiseTransactions WHERE TRANSACTION_ID = ? AND FRIEND_ID = ?`,
+            [split.transactionId, friendDbId]
+          );
+        }
+
+        console.log(`Deleted SplitwiseTransactions for ${split.splitwiseTransactionId}`);
+
+        offsetEntries.push({
+          splitwiseTransactionId: split.splitwiseTransactionId,
+          dummyTransactionId: split.splitedTransactionId,
+          amount: split.splitedAmount,
+          description: split.description,
+          type: split.type,
+        });
+
+      } catch (error) {
+        console.error(`Error processing split ${split.splitwiseTransactionId}:`, error);
+      }
+    }
+
+    const message = allSplitsToProcess.length > 0 
+      ? `Successfully settled ${allSplitsToProcess.length} transaction(s) for ${friendName} (₹${totalSettlementAmount})`
       : `No transactions to process for ${friendName}`;
 
     return NextResponse.json({
