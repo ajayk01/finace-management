@@ -92,7 +92,7 @@ export function ExpenseBreakdownTable({
   onOpenCalculators,
 }: ExpenseBreakdownTableProps) {
 
-  const [viewMode, setViewMode] = React.useState<'table' | 'chart'>('table');
+  const [viewMode, setViewMode] = React.useState<'table' | 'chart'>('chart');
 
   const { categorizedData, grandTotal } = React.useMemo(() => {
     if (!data || data.length === 0) {
@@ -169,7 +169,7 @@ export function ExpenseBreakdownTable({
             </Button>
             {showSelectors && (
               <>
-                <Select value={selectedMonth} onValueChange={(value) => { onMonthChange(value); setViewMode('table'); }}>
+                <Select value={selectedMonth} onValueChange={(value) => { onMonthChange(value); }}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select month" />
                   </SelectTrigger>
@@ -183,7 +183,7 @@ export function ExpenseBreakdownTable({
                 </Select>
                 <Select
                   value={selectedYear.toString()}
-                  onValueChange={(value) => { onYearChange(parseInt(value, 10)); setViewMode('table'); }}
+                  onValueChange={(value) => { onYearChange(parseInt(value, 10)); }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select year" />

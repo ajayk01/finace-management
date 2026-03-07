@@ -8,47 +8,126 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 const COLORS = ['#3B82F6', '#8B5CF6', '#A78BFA', '#F59E0B', '#EF4444', '#B91C1C', '#DC2626', '#10B981', '#6366F1', '#F97316'];
 
 const RADIAN = Math.PI / 180;
-const renderCustomizedLabel = ({ cx, cy, midAngle, outerRadius, percent, index, value, name, fill }: any) => {
-  const sin = Math.sin(-midAngle * RADIAN);
-  const cos = Math.cos(-midAngle * RADIAN);
+const LABEL_EXTEND = 18;
+const LINE_EXTEND = 28;
+const MIN_LABEL_SPACING = 26;
 
-  const sx = cx + outerRadius * cos;
-  const sy = cy + outerRadius * sin;
-  const mx = cx + (outerRadius + 15) * cos;
-  const my = cy + (outerRadius + 15) * sin;
-  const ex = mx + (cos >= 0 ? 1 : -1) * 30;
-  const ey = my;
-  const textAnchor = cos >= 0 ? 'start' : 'end';
-  const labelColor = fill;
-
-  let formattedValue: string;
-  if (value === 0) {
-    formattedValue = '₹0';
-  } else if (value < 1000) {
-    formattedValue = `₹${value.toFixed(0)}`;
-  } else if (value % 1000 === 0) {
-    formattedValue = `₹${(value / 1000).toFixed(0)}K`;
-  } else {
-    formattedValue = `₹${(value / 1000).toFixed(1)}K`;
-  }
-  
-  if (value === 0 || !isFinite(sx) || !isFinite(sy)) return null;
-
-
-  return (
-    <g>
-      <path d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`} stroke={labelColor} fill="none" strokeWidth={1.5} />
-      <text x={ex + (cos >= 0 ? 1 : -1) * 8} y={ey} textAnchor={textAnchor} fill="hsl(var(--foreground))" dominantBaseline="central">
-        <tspan x={ex + (cos >= 0 ? 1 : -1) * 8} dy="-0.5em" className="font-semibold text-sm">
-          {formattedValue}
-        </tspan>
-        <tspan x={ex + (cos >= 0 ? 1 : -1) * 8} dy="1.1em" className="text-[11px] text-muted-foreground">
-          {name}
-        </tspan>
-      </text>
-    </g>
-  );
+const formatValue = (value: number): string => {
+  if (value === 0) return '₹0';
+  if (value < 1000) return `₹${value.toFixed(0)}`;
+  if (value % 1000 === 0) return `₹${(value / 1000).toFixed(0)}K`;
+  return `₹${(value / 1000).toFixed(1)}K`;
 };
+
+interface LabelInfo {
+  idx: number;
+  cos: number;
+  sin: number;
+  side: 'left' | 'right';
+  initialY: number;
+  adjustedY: number;
+}
+
+function resolveCollisions(group: LabelInfo[], outerRadius: number) {
+  if (group.length <= 1) return;
+
+  group.sort((a, b) => a.adjustedY - b.adjustedY);
+
+  // Forward pass: push labels apart to maintain minimum spacing
+  for (let i = 1; i < group.length; i++) {
+    if (group[i].adjustedY - group[i - 1].adjustedY < MIN_LABEL_SPACING) {
+      group[i].adjustedY = group[i - 1].adjustedY + MIN_LABEL_SPACING;
+    }
+  }
+
+  // Recenter: shift group to preserve average y position
+  const avgInitial = group.reduce((s, l) => s + l.initialY, 0) / group.length;
+  const avgAdjusted = group.reduce((s, l) => s + l.adjustedY, 0) / group.length;
+  const shift = avgInitial - avgAdjusted;
+  group.forEach(l => (l.adjustedY += shift));
+
+  // Re-sort and re-resolve after centering
+  group.sort((a, b) => a.adjustedY - b.adjustedY);
+  for (let i = 1; i < group.length; i++) {
+    if (group[i].adjustedY - group[i - 1].adjustedY < MIN_LABEL_SPACING) {
+      group[i].adjustedY = group[i - 1].adjustedY + MIN_LABEL_SPACING;
+    }
+  }
+
+  // Backward pass: pull labels up if needed
+  for (let i = group.length - 2; i >= 0; i--) {
+    if (group[i + 1].adjustedY - group[i].adjustedY < MIN_LABEL_SPACING) {
+      group[i].adjustedY = group[i + 1].adjustedY - MIN_LABEL_SPACING;
+    }
+  }
+
+  // Clamp within reasonable bounds
+  const maxY = outerRadius + 60;
+  const minY = -(outerRadius + 60);
+  if (group[group.length - 1].adjustedY > maxY) {
+    group[group.length - 1].adjustedY = maxY;
+    for (let i = group.length - 2; i >= 0; i--) {
+      if (group[i + 1].adjustedY - group[i].adjustedY < MIN_LABEL_SPACING) {
+        group[i].adjustedY = group[i + 1].adjustedY - MIN_LABEL_SPACING;
+      }
+    }
+  }
+  if (group[0].adjustedY < minY) {
+    group[0].adjustedY = minY;
+    for (let i = 1; i < group.length; i++) {
+      if (group[i].adjustedY - group[i - 1].adjustedY < MIN_LABEL_SPACING) {
+        group[i].adjustedY = group[i - 1].adjustedY + MIN_LABEL_SPACING;
+      }
+    }
+  }
+}
+
+function computeAdjustedPositions(
+  data: { name: string; value: number }[],
+  outerRadius: number,
+  paddingAngle: number
+): Map<number, number> {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0) return new Map();
+
+  const activeCount = data.filter(d => d.value > 0).length;
+  const availableAngle = 360 - activeCount * paddingAngle;
+  const labelRadius = outerRadius + LABEL_EXTEND;
+
+  let cumAngle = paddingAngle / 2;
+  const labels: LabelInfo[] = [];
+
+  data.forEach((entry, i) => {
+    if (entry.value <= 0) return;
+
+    const sliceAngle = (entry.value / total) * availableAngle;
+    const midAngle = cumAngle + sliceAngle / 2;
+    cumAngle += sliceAngle + paddingAngle;
+
+    const cos = Math.cos(-midAngle * RADIAN);
+    const sin = Math.sin(-midAngle * RADIAN);
+    const yPos = labelRadius * sin;
+
+    labels.push({
+      idx: i,
+      cos,
+      sin,
+      side: cos >= 0 ? 'right' : 'left',
+      initialY: yPos,
+      adjustedY: yPos,
+    });
+  });
+
+  const rightLabels = labels.filter(l => l.side === 'right');
+  const leftLabels = labels.filter(l => l.side === 'left');
+
+  resolveCollisions(rightLabels, outerRadius);
+  resolveCollisions(leftLabels, outerRadius);
+
+  const result = new Map<number, number>();
+  [...rightLabels, ...leftLabels].forEach(l => result.set(l.idx, l.adjustedY));
+  return result;
+}
 
 interface PieChartDataItem {
   name: string;
@@ -74,7 +153,7 @@ export function ExpensePieChart({
     const sorted = [...data].sort((a, b) => b.value - a.value);
     
     // Interleave them to spread small slices out
-    const interleaved = [];
+    const interleaved: PieChartDataItem[] = [];
     let left = 0;
     let right = sorted.length - 1;
     while (left <= right) {
@@ -90,7 +169,67 @@ export function ExpensePieChart({
     return interleaved;
   }, [data]);
 
+  const PIE_OUTER_RADIUS = 100;
+  const PIE_INNER_RADIUS = 70;
+  const PADDING_ANGLE = 1;
+
+  const adjustedYMap = React.useMemo(
+    () => computeAdjustedPositions(chartData, PIE_OUTER_RADIUS, PADDING_ANGLE),
+    [chartData]
+  );
+
   const totalAmount = chartData.reduce((sum, entry) => sum + entry.value, 0);
+
+  const renderLabel = React.useCallback(
+    ({ cx, cy, midAngle, outerRadius: or, index, value, name, fill }: any) => {
+      if (value === 0 || !isFinite(cx) || !isFinite(cy)) return null;
+
+      const cos = Math.cos(-midAngle * RADIAN);
+      const sin = Math.sin(-midAngle * RADIAN);
+
+      // Point on the pie edge
+      const sx = cx + or * cos;
+      const sy = cy + or * sin;
+
+      // Adjusted label y position (relative to cy)
+      const adjustedYOffset = adjustedYMap.get(index);
+      const defaultY = (or + LABEL_EXTEND) * sin;
+      const labelY = cy + (adjustedYOffset !== undefined ? adjustedYOffset : defaultY);
+
+      const direction = cos >= 0 ? 1 : -1;
+      const elbowX = cx + direction * (or + LABEL_EXTEND);
+      const ex = elbowX + direction * LINE_EXTEND;
+
+      const formattedValue = formatValue(value);
+      const textAnchor = cos >= 0 ? 'start' : 'end';
+
+      return (
+        <g>
+          <path
+            d={`M${sx},${sy}L${elbowX},${labelY}L${ex},${labelY}`}
+            stroke={fill}
+            fill="none"
+            strokeWidth={1.5}
+          />
+          <text
+            x={ex + direction * 6}
+            y={labelY}
+            textAnchor={textAnchor}
+            fill="hsl(var(--foreground))"
+            dominantBaseline="central"
+          >
+            <tspan x={ex + direction * 6} dy="-0.5em" className="font-semibold text-sm">
+              {formattedValue}
+            </tspan>
+            <tspan x={ex + direction * 6} dy="1.1em" className="text-[11px] text-muted-foreground">
+              {name}
+            </tspan>
+          </text>
+        </g>
+      );
+    },
+    [adjustedYMap]
+  );
 
   return (
     <Card className="shadow-md hover:shadow-lg transition-shadow duration-300">
@@ -98,23 +237,23 @@ export function ExpensePieChart({
         <CardTitle className="text-2xl font-bold">{chartTitle}</CardTitle>
         <CardDescription className="text-sm text-muted-foreground">{chartDescription}</CardDescription>
       </CardHeader>
-      <CardContent className="h-[320px] sm:h-[380px] relative">
+      <CardContent className="h-[380px] sm:h-[450px] relative">
         {chartData.length > 0 ? (
           <>
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart margin={{ top: 30, right: 60, bottom: 30, left: 60 }}>
+              <PieChart margin={{ top: 40, right: 80, bottom: 40, left: 80 }}>
                 <Pie
                   data={chartData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={renderCustomizedLabel}
-                  outerRadius={110}
-                  innerRadius={80}
+                  label={renderLabel}
+                  outerRadius={PIE_OUTER_RADIUS}
+                  innerRadius={PIE_INNER_RADIUS}
                   fill="#8884d8"
                   dataKey="value"
                   nameKey="name"
-                  paddingAngle={1}
+                  paddingAngle={PADDING_ANGLE}
                 >
                   {chartData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke={COLORS[index % COLORS.length]} />
