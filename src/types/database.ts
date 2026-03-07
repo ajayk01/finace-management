@@ -83,9 +83,9 @@ export interface CreditCardCapDetails {
   CAP_CURRENT_AMOUNT: number;
 }
 
-export interface CreditCardCapTransactions {
+export interface CreditCardTransactions {
   TRANSACTION_ID: number;
   CREDIT_CARD_ID: number;
   CAP_ID: number;
-  AMOUNT: number;
+  REWARDS: number;
 }

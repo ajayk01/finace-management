@@ -61,13 +61,13 @@ async function fetchBankTransactionsFromDB(
         sc.SUB_CATEGORY_NAME,
         aFrom.ACCOUNT_NAME AS FROM_ACCOUNT_NAME,
         aTo.ACCOUNT_NAME AS TO_ACCOUNT_NAME,
-        cct.CAP_ID
+        cct.CapId AS CAP_ID
       FROM Transactions t
       LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
       LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
       LEFT JOIN Accounts aFrom ON t.FROM_ACCOUNT_ID = aFrom.ID
       LEFT JOIN Accounts aTo ON t.TO_ACCOUNT_ID = aTo.ID
-      LEFT JOIN CreditCardCapTransactions cct ON t.ID = cct.TRANSACTION_ID
+      LEFT JOIN CreditCardTransactions cct ON t.ID = cct.TransactionId
       WHERE (t.FROM_ACCOUNT_ID = ? OR t.TO_ACCOUNT_ID = ?)
     `;
 

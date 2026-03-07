@@ -53,6 +53,7 @@ interface Transaction {
   investmentAccountId?: string;
   investmentAccountName?: string;
   capId?: string;
+  rewards?: number;
 }
 
 interface TransactionDialogProps {
@@ -74,6 +75,7 @@ interface TransactionDialogProps {
   onCategoryFilterChange?: (value: string) => void;
   includeSplitwise?: boolean;
   onIncludeSplitwiseChange?: (value: boolean) => void;
+  entityType?: 'bank' | 'credit-card' | null;
   // Action callbacks for edit, duplicate, delete
   onEdit?: (transaction: Transaction) => void;
   onDuplicate?: (transaction: Transaction) => void;
@@ -122,6 +124,7 @@ export function TransactionDialog({
   onCategoryFilterChange,
   includeSplitwise,
   onIncludeSplitwiseChange,
+  entityType,
   onEdit,
   onDuplicate,
   onDelete,
@@ -244,6 +247,7 @@ export function TransactionDialog({
                         <TableHead>Description</TableHead>
                       )}
                       <TableHead className="text-right">Amount</TableHead>
+                      {entityType === 'credit-card' && <TableHead className="text-right">Rewards</TableHead>}
                       {hasActions && <TableHead className="text-center">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
@@ -282,6 +286,11 @@ export function TransactionDialog({
                           {tx.type === 'Income' ? '+' : tx.type === 'Expense' ? '' : ''}
                           {formatCurrency(tx.amount)}
                         </TableCell>
+                        {entityType === 'credit-card' && (
+                          <TableCell className="text-right text-amber-600 font-medium whitespace-nowrap">
+                            {tx.rewards != null && tx.rewards > 0 ? formatCurrency(tx.rewards) : '-'}
+                          </TableCell>
+                        )}
                         {hasActions && (
                           <TableCell>
                             <div className="flex items-center justify-center gap-1">

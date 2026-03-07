@@ -1120,6 +1120,7 @@ export default function DashboardPage() {
         onDuplicate={transactionEntityType ? handleTxDialogDuplicate : undefined}
         onDelete={transactionEntityType ? handleTxDialogDelete : undefined}
         isDeleting={isDeletingTransaction}
+        entityType={transactionEntityType}
       />
       <InvestmentCalculatorDialog 
         open={isInvestmentCalculatorOpen}

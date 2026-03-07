@@ -63,7 +63,7 @@ async function fetchAllTransactionsFromDB({
     t.TO_ACCOUNT_ID,
     aFrom.ACCOUNT_NAME AS FROM_ACCOUNT_NAME,
     aTo.ACCOUNT_NAME AS TO_ACCOUNT_NAME,
-    cct.CAP_ID
+    cct.CapId AS CAP_ID
     FROM Transactions t
     LEFT JOIN Category c 
         ON t.CATEGORY_ID = c.ID
@@ -73,8 +73,8 @@ async function fetchAllTransactionsFromDB({
         ON t.FROM_ACCOUNT_ID = aFrom.ID
     LEFT JOIN Accounts aTo 
         ON t.TO_ACCOUNT_ID = aTo.ID
-    LEFT JOIN CreditCardCapTransactions cct 
-        ON t.ID = cct.TRANSACTION_ID
+    LEFT JOIN CreditCardTransactions cct 
+        ON t.ID = cct.TransactionId
     WHERE t.DATE BETWEEN ? AND ?
     ORDER BY t.DATE DESC;
     `;

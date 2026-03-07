@@ -18,6 +18,7 @@ interface CreditCardCap {
   capPercentage: number;
   capCurrentAmount: number;
   remainingAmount: number;
+  totalRewards: number;
 }
 
 interface ViewCapsDialogProps {
@@ -89,6 +90,7 @@ export function ViewCapsDialog({
                   <TableHead className="text-right">Used</TableHead>
                   <TableHead className="text-right">Remaining</TableHead>
                   <TableHead className="text-center">Percentage</TableHead>
+                  <TableHead className="text-right">Rewards (This Month)</TableHead>
                   <TableHead>Usage</TableHead>
                 </TableRow>
               </TableHeader>
@@ -110,6 +112,9 @@ export function ViewCapsDialog({
                       <TableCell className="text-center">
                         {cap.capPercentage}%
                       </TableCell>
+                      <TableCell className="text-right text-blue-600">
+                        ₹{cap.totalRewards.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
                       <TableCell>
                         <div className="space-y-1">
                           <Progress 
@@ -126,6 +131,13 @@ export function ViewCapsDialog({
                 })}
               </TableBody>
             </Table>
+            {caps.length > 0 && (
+              <div className="mt-4 flex justify-end">
+                <div className="text-sm font-semibold text-blue-600">
+                  Total Rewards (This Month): ₹{caps.reduce((sum, cap) => sum + cap.totalRewards, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

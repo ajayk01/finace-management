@@ -11,29 +11,43 @@ export interface CreditCardCap {
   capPercentage: number;
   capCurrentAmount: number;
   remainingAmount: number;
+  totalRewards: number;
 }
 
 async function fetchCreditCardCapsFromDB(creditCardId?: string) {
   try {
+    // Get current month start/end timestamps
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+
     let sql = `
       SELECT 
-        ID,
-        CREDIT_CARD_ID,
-        CAP_NAME,
-        CAP_TOTAL_AMOUNT,
-        CAP_PERCENTAGE,
-        CAP_CURRENT_AMOUNT
-      FROM CreditCardCapDetails
+        ccd.ID,
+        ccd.CREDIT_CARD_ID,
+        ccd.CAP_NAME,
+        ccd.CAP_TOTAL_AMOUNT,
+        ccd.CAP_PERCENTAGE,
+        ccd.CAP_CURRENT_AMOUNT,
+        COALESCE(rewards.TOTAL_REWARDS, 0) AS TOTAL_REWARDS
+      FROM CreditCardCapDetails ccd
+      LEFT JOIN (
+        SELECT CapId, CreditCardId, SUM(Rewards) AS TOTAL_REWARDS
+        FROM CreditCardTransactions cct
+        INNER JOIN Transactions t ON cct.TransactionId = t.ID
+        WHERE t.DATE >= ? AND t.DATE <= ?
+        GROUP BY CapId, CreditCardId
+      ) rewards ON ccd.ID = rewards.CapId AND ccd.CREDIT_CARD_ID = rewards.CreditCardId
     `;
     
-    const params: any[] = [];
+    const params: any[] = [monthStart, monthEnd];
     
     if (creditCardId) {
-      sql += ' WHERE CREDIT_CARD_ID = ?';
+      sql += ' WHERE ccd.CREDIT_CARD_ID = ?';
       params.push(creditCardId);
     }
     
-    sql += ' ORDER BY CAP_NAME';
+    sql += ' ORDER BY ccd.CAP_NAME';
     console.log("Executing SQL:", sql, "with params:", params);
     const caps = await query<any>(sql, params);
     
@@ -46,6 +60,7 @@ async function fetchCreditCardCapsFromDB(creditCardId?: string) {
       capCurrentAmount: Math.trunc(Number(cap.CAP_CURRENT_AMOUNT) || 0),
       remainingAmount:
         Math.trunc(Number(cap.CAP_TOTAL_AMOUNT) || 0) - Math.trunc(Number(cap.CAP_CURRENT_AMOUNT) || 0),
+      totalRewards: Number(cap.TOTAL_REWARDS) || 0,
     }));
   } catch (error) {
     console.error("Error fetching credit card caps from database:", error);

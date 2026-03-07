@@ -289,9 +289,9 @@ async function createSplitwiseTransaction({
 }
 
 /**
- * Create Credit Card Cap Transaction and update cap current amount
+ * Create Credit Card Transaction entry with calculated rewards
  */
-async function createCreditCardCapTransaction({
+async function createCreditCardTransaction({
     transactionId,
     creditCardId,
     capId,
@@ -303,14 +303,24 @@ async function createCreditCardCapTransaction({
     amount: number;
 }): Promise<void> {
     try {
-        const rupeesOnlyAmount = Math.trunc(amount);
-        // Insert cap transaction
+        // Fetch the cap percentage to calculate rewards
+        const capSql = `SELECT CAP_PERCENTAGE FROM CreditCardCapDetails WHERE ID = ?`;
+        const capRows = await query<any>(capSql, [parseInt(capId)]);
+        
+        if (!capRows || capRows.length === 0) {
+            console.warn(`⚠️ Cap not found for ID ${capId}, skipping CreditCardTransactions insert`);
+            return;
+        }
+        
+        const capPercentage = Number(capRows[0].CAP_PERCENTAGE) || 0;
+        const rewards = (Math.trunc(amount) * capPercentage) / 100;
+        
         const insertSql = `
-            INSERT INTO CreditCardCapTransactions (
-                TRANSACTION_ID,
-                CREDIT_CARD_ID,
-                CAP_ID,
-                AMOUNT
+            INSERT INTO CreditCardTransactions (
+                TransactionId,
+                CreditCardId,
+                CapId,
+                Rewards
             ) VALUES (?, ?, ?, ?)
         `;
         
@@ -318,11 +328,12 @@ async function createCreditCardCapTransaction({
             transactionId,
             parseInt(creditCardId),
             parseInt(capId),
-            rupeesOnlyAmount
-        ]);        
-        console.log(`✅ Created credit card cap transaction for cap ${capId}, amount: ${rupeesOnlyAmount}`);
+            rewards,
+        ]);
+        
+        console.log(`✅ Created CreditCardTransactions entry for cap ${capId}, rewards: ${rewards}`);
     } catch (error) {
-        console.error('❌ Error creating credit card cap transaction:', error);
+        console.error('❌ Error creating credit card transaction:', error);
         throw error;
     }
 }
@@ -488,7 +499,7 @@ export async function POST(request: NextRequest)
             
             // Create credit card cap transaction if capId is provided and account is credit card
             if (capId && account.type === 'Credit Card') {
-                await createCreditCardCapTransaction({
+                await createCreditCardTransaction({
                     transactionId,
                     creditCardId: account.id,
                     capId,
@@ -565,28 +576,16 @@ export async function PUT(request: NextRequest) {
         
         // Handle credit card cap transaction for updates
         if (account.type === 'Credit Card') {
-            // First, get the old cap transaction details before deleting
-            const oldCapSql = `
-                SELECT CAP_ID, AMOUNT 
-                FROM CreditCardCapTransactions 
-                WHERE TRANSACTION_ID = ?
+            // Delete old CreditCardTransactions entry
+            const deleteRewardsSql = `
+                DELETE FROM CreditCardTransactions 
+                WHERE TransactionId = ?
             `;
-            const oldCapTransactions = await query<any>(oldCapSql, [parseInt(id)]);
-            
-            // Revert the old cap amount
-            if (oldCapTransactions && oldCapTransactions.length > 0) {
-                
-                // Delete the old cap transaction
-                const deleteSql = `
-                    DELETE FROM CreditCardCapTransactions 
-                    WHERE TRANSACTION_ID = ?
-                `;
-                await query(deleteSql, [parseInt(id)]);
-            }
+            await query(deleteRewardsSql, [parseInt(id)]);
             
             // Now create new cap transaction if capId is provided
             if (capId) {
-                await createCreditCardCapTransaction({
+                await createCreditCardTransaction({
                     transactionId: parseInt(id),
                     creditCardId: account.id,
                     capId,
