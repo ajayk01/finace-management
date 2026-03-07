@@ -341,6 +341,7 @@ async function createCreditCardTransaction({
 
 const addExpenseSchema = z.object({
   amount: z.number(),
+  charges: z.number().optional().default(0),
   date: z.string(), // ISO date string
   description: z.string().optional(),
   account: z.object({
@@ -359,6 +360,24 @@ const addExpenseSchema = z.object({
 });
 
 
+/**
+ * Look up the "Charges" category and "Platform Fee" subcategory IDs from the database
+ */
+async function getChargesCategoryIds(): Promise<{ categoryId: string; subCategoryId: string | null }> {
+    const catSql = `SELECT ID FROM Category WHERE CATEGORY_NAME = 'Charges' LIMIT 1`;
+    const catRows = await query<any>(catSql);
+    if (!catRows || catRows.length === 0) {
+        throw new Error('Charges category not found in database');
+    }
+    const categoryId = catRows[0].ID.toString();
+
+    const subCatSql = `SELECT ID FROM SubCategory WHERE CATEGORY_ID = ? AND SUB_CATEGORY_NAME = 'Platform Fee' LIMIT 1`;
+    const subCatRows = await query<any>(subCatSql, [parseInt(categoryId)]);
+    const subCategoryId = subCatRows && subCatRows.length > 0 ? subCatRows[0].ID.toString() : null;
+
+    return { categoryId, subCategoryId };
+}
+
 export async function POST(request: NextRequest) 
 {
     // Always refresh the mapping to ensure it's up to date
@@ -368,7 +387,7 @@ export async function POST(request: NextRequest)
         const body = await request.json();
         const parsedData = addExpenseSchema.parse(body);
 
-        let { amount, date, description, account, categoryId, subCategoryId, capId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId, splitType, customAmounts } = parsedData;
+        let { amount, charges, date, description, account, categoryId, subCategoryId, capId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId, splitType, customAmounts } = parsedData;
         let splitAmt: number = 0;
         console.log("customAmounts received:", customAmounts);
         console.log("splitType:", splitType);
@@ -508,6 +527,20 @@ export async function POST(request: NextRequest)
                 });
             }
             
+            // Create a separate charges transaction if charges > 0
+            if (charges && charges > 0) {
+                const chargesIds = await getChargesCategoryIds();
+                const chargesTransactionId = await createExpenseTransaction({
+                    amount: charges,
+                    date,
+                    description: `Charges for ${transactionId}`,
+                    account,
+                    categoryId: chargesIds.categoryId,
+                    subCategoryId: chargesIds.subCategoryId || undefined,
+                });
+                console.log(`✅ Created charges transaction with ID: ${chargesTransactionId}, amount: ${charges}`);
+            }
+            
             return { transactionId, splitwiseTransactionId };
         });
 
@@ -534,6 +567,7 @@ export async function POST(request: NextRequest)
 const updateExpenseSchema = z.object({
   id: z.string(),
   amount: z.number(),
+  charges: z.number().optional().default(0),
   date: z.string(),
   description: z.string().optional(),
   account: z.object({
@@ -549,7 +583,7 @@ export async function PUT(request: NextRequest) {
     try {
         const body = await request.json();
         const parsedData = updateExpenseSchema.parse(body);
-        const { id, amount, date, description, account, categoryId, subCategoryId, capId } = parsedData;
+        const { id, amount, charges, date, description, account, categoryId, subCategoryId, capId } = parsedData;
 
         const epochTime = new Date(date).getTime();
 
@@ -593,6 +627,20 @@ export async function PUT(request: NextRequest) {
                     amount
                 });
             }
+        }
+        
+        // Create a separate charges transaction if charges > 0
+        if (charges && charges > 0) {
+            const chargesIds = await getChargesCategoryIds();
+            const chargesTxId = await createExpenseTransaction({
+                amount: charges,
+                date,
+                description: `Charges for ${id}`,
+                account,
+                categoryId: chargesIds.categoryId,
+                subCategoryId: chargesIds.subCategoryId || undefined,
+            });
+            console.log(`✅ Created charges transaction with ID: ${chargesTxId} for updated expense ${id}`);
         }
         
         return NextResponse.json({ 

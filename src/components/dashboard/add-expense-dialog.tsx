@@ -44,6 +44,7 @@ import type { Transaction } from '@/app/page';
 
 const expenseSchemaBase = z.object({
   amount: z.coerce.number().refine((val) => val !== 0, { message: 'Amount cannot be zero.' }),
+  charges: z.coerce.number().min(0, 'Charges cannot be negative.').default(0),
   date: z.date({ required_error: 'A date is required.' }),
   time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid time format.'),
   description: z.string().min(1, 'Description is required.'),
@@ -175,6 +176,7 @@ export function AddExpenseDialog({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       amount: 0,
+      charges: 0,
       description: '',
       accountId: '',
       categoryId: '',
@@ -353,6 +355,7 @@ export function AddExpenseDialog({
 
     const payload: any = {
         amount: values.amount,
+        charges: values.charges || 0,
         date: format(values.date, 'yyyy-MM-dd') + 'T' + values.time,
         description: values.description,
         account: {
@@ -743,19 +746,34 @@ export function AddExpenseDialog({
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             {step === 1 && (
               <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="amount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Amount</FormLabel>
-                      <FormControl>
-                        <Input type="number" placeholder="0.00" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Amount</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="0.00" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="charges"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Charges</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="0.00" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}

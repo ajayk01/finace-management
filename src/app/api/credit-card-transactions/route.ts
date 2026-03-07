@@ -102,8 +102,29 @@ async function fetchCreditCardTransactionsFromDB(
 
     console.log(`Fetched ${transactions.length} credit card transactions for account ${creditCardId}`);
 
+    // Build a map of charges amounts keyed by the actual transaction ID they belong to.
+    // Charges transactions have NOTES like "Charges for <transactionId>".
+    const chargesMap = new Map<string, number>();
+    const chargesTxIds = new Set<string>();
+
+    for (const tx of transactions) {
+      const notes = (tx.NOTES || '') as string;
+      const match = notes.match(/^Charges for (\d+)$/);
+      if (match) {
+        const parentId = match[1];
+        chargesMap.set(parentId, (chargesMap.get(parentId) || 0) + Number(tx.AMOUNT));
+        chargesTxIds.add(tx.ID.toString());
+      }
+    }
+
+    // Filter out the charges transactions themselves and add their amounts to the parent
+    const filteredTransactions = transactions.filter((tx: any) => !chargesTxIds.has(tx.ID.toString()));
+
     // Map to Transaction interface and determine type
-    return transactions.map((tx: any) => {
+    return filteredTransactions.map((tx: any) => {
+      // Add charges amount to the parent transaction
+      const chargesAmount = chargesMap.get(tx.ID.toString()) || 0;
+      const totalAmount = Number(tx.AMOUNT) + chargesAmount;
       let type: Transaction['type'] = 'Other';
       let category = '';
       let subCategory = '';
@@ -144,7 +165,7 @@ async function fetchCreditCardTransactionsFromDB(
         id: tx.ID.toString(),
         date: new Date(tx.DATE).toISOString().split('T')[0],
         description: tx.NOTES || 'No Description',
-        amount: tx.AMOUNT,
+        amount: totalAmount,
         type,
         category,
         subCategory,
