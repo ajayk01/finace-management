@@ -12,6 +12,7 @@ export interface CreditCardCap {
   capCurrentAmount: number;
   remainingAmount: number;
   totalRewards: number;
+  rewardPerAmount: number;
 }
 
 async function fetchCreditCardCapsFromDB(creditCardId?: string) {
@@ -29,6 +30,7 @@ async function fetchCreditCardCapsFromDB(creditCardId?: string) {
         ccd.CAP_TOTAL_AMOUNT,
         ccd.CAP_PERCENTAGE,
         ccd.CAP_CURRENT_AMOUNT,
+        ccd.REWARD_PER_AMOUNT,
         COALESCE(rewards.TOTAL_REWARDS, 0) AS TOTAL_REWARDS
       FROM CreditCardCapDetails ccd
       LEFT JOIN (
@@ -61,6 +63,7 @@ async function fetchCreditCardCapsFromDB(creditCardId?: string) {
       remainingAmount:
         Math.trunc(Number(cap.CAP_TOTAL_AMOUNT) || 0) - Math.trunc(Number(cap.CAP_CURRENT_AMOUNT) || 0),
       totalRewards: Number(cap.TOTAL_REWARDS) || 0,
+      rewardPerAmount: Number(cap.REWARD_PER_AMOUNT) || 100,
     }));
   } catch (error) {
     console.error("Error fetching credit card caps from database:", error);
@@ -90,13 +93,14 @@ const addCapSchema = z.object({
   capName: z.string(),
   capTotalAmount: z.number(),
   capPercentage: z.number(),
+  rewardPerAmount: z.number().default(100),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const parsedData = addCapSchema.parse(body);
-    const { creditCardId, capName, capTotalAmount, capPercentage } = parsedData;
+    const { creditCardId, capName, capTotalAmount, capPercentage, rewardPerAmount } = parsedData;
 
     const sql = `
       INSERT INTO CreditCardCapDetails (
@@ -104,8 +108,9 @@ export async function POST(request: NextRequest) {
         CAP_NAME,
         CAP_TOTAL_AMOUNT,
         CAP_PERCENTAGE,
-        CAP_CURRENT_AMOUNT
-      ) VALUES (?, ?, ?, ?, ?)
+        CAP_CURRENT_AMOUNT,
+        REWARD_PER_AMOUNT
+      ) VALUES (?, ?, ?, ?, ?, ?)
     `;
 
     const result: any = await query(sql, [
@@ -114,6 +119,7 @@ export async function POST(request: NextRequest) {
       capTotalAmount,
       capPercentage,
       0, // Initial current amount is 0
+      rewardPerAmount,
     ]);
 
     const insertedId = result?.insertId || result?.[0]?.insertId || 0;

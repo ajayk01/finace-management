@@ -81,6 +81,7 @@ export interface CreditCardCapDetails {
   CAP_TOTAL_AMOUNT: number;
   CAP_PERCENTAGE: number;
   CAP_CURRENT_AMOUNT: number;
+  REWARD_PER_AMOUNT: number;
 }
 
 export interface CreditCardTransactions {

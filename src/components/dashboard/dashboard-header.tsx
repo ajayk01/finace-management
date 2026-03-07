@@ -298,6 +298,7 @@ function AddCapHeaderDialog({
     capName: z.string().min(1, 'Cap name is required.'),
     capTotalAmount: z.coerce.number().min(1, 'Total amount must be greater than 0.'),
     capPercentage: z.coerce.number().min(0).max(100, 'Percentage must be between 0 and 100.'),
+    rewardPerAmount: z.coerce.number().min(1, 'Reward per amount must be at least 1.'),
   });
 
   const capForm = useForm<z.infer<typeof capSchema>>({
@@ -307,6 +308,7 @@ function AddCapHeaderDialog({
       capName: '',
       capTotalAmount: '' as any,
       capPercentage: '' as any,
+      rewardPerAmount: 100,
     },
   });
 
@@ -421,6 +423,19 @@ function AddCapHeaderDialog({
                   <FormLabel>Cap Percentage (%)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="0" min="0" max="100" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={capForm.control}
+              name="rewardPerAmount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Reward Per Amount</FormLabel>
+                  <FormControl>
+                    <Input type="number" placeholder="100" min="1" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

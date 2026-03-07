@@ -304,7 +304,7 @@ async function createCreditCardTransaction({
 }): Promise<void> {
     try {
         // Fetch the cap percentage to calculate rewards
-        const capSql = `SELECT CAP_PERCENTAGE FROM CreditCardCapDetails WHERE ID = ?`;
+        const capSql = `SELECT CAP_PERCENTAGE, REWARD_PER_AMOUNT FROM CreditCardCapDetails WHERE ID = ?`;
         const capRows = await query<any>(capSql, [parseInt(capId)]);
         
         if (!capRows || capRows.length === 0) {
@@ -313,7 +313,8 @@ async function createCreditCardTransaction({
         }
         
         const capPercentage = Number(capRows[0].CAP_PERCENTAGE) || 0;
-        const rewards = (Math.trunc(amount) * capPercentage) / 100;
+        const rewardPerAmount = Number(capRows[0].REWARD_PER_AMOUNT) || 100;
+        const rewards = (Math.trunc(amount) * capPercentage) / rewardPerAmount;
         
         const insertSql = `
             INSERT INTO CreditCardTransactions (

@@ -19,6 +19,7 @@ interface CreditCardCap {
   capCurrentAmount: number;
   remainingAmount: number;
   totalRewards: number;
+  rewardPerAmount: number;
 }
 
 interface ViewCapsDialogProps {
@@ -60,9 +61,9 @@ export function ViewCapsDialog({
     }
   };
 
-  const calculateUsagePercentage = (current: number, total: number) => {
+  const calculateUsagePercentage = (rewards: number, total: number) => {
     if (total === 0) return 0;
-    return (current / total) * 100;
+    return (rewards / total) * 100;
   };
 
   return (
@@ -90,30 +91,31 @@ export function ViewCapsDialog({
                   <TableHead className="text-right">Used</TableHead>
                   <TableHead className="text-right">Remaining</TableHead>
                   <TableHead className="text-center">Percentage</TableHead>
-                  <TableHead className="text-right">Rewards (This Month)</TableHead>
+                  <TableHead className="text-right">Reward Per Amt</TableHead>
                   <TableHead>Usage</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {caps.map((cap) => {
-                  const usagePercentage = calculateUsagePercentage(cap.capCurrentAmount, cap.capTotalAmount);
+                  const usagePercentage = calculateUsagePercentage(cap.totalRewards, cap.capTotalAmount);
+                  const remaining = cap.capTotalAmount - cap.totalRewards;
                   return (
                     <TableRow key={cap.id}>
                       <TableCell className="font-medium">{cap.capName}</TableCell>
                       <TableCell className="text-right">
                         ₹{cap.capTotalAmount.toLocaleString('en-IN')}
                       </TableCell>
-                      <TableCell className="text-right text-red-600">
-                        ₹{Math.trunc(cap.capCurrentAmount).toLocaleString('en-IN')}
+                      <TableCell className="text-right text-blue-600">
+                        ₹{cap.totalRewards.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right text-green-600">
-                        ₹{cap.remainingAmount.toLocaleString('en-IN')}
+                        ₹{remaining.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-center">
                         {cap.capPercentage}%
                       </TableCell>
-                      <TableCell className="text-right text-blue-600">
-                        ₹{cap.totalRewards.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <TableCell className="text-right">
+                        {cap.rewardPerAmount}
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
