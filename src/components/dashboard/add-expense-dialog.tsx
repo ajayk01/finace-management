@@ -931,8 +931,8 @@ export function AddExpenseDialog({
                       <FormItem>
                         <FormLabel>Credit Card Cap (Optional)</FormLabel>
                         <Select 
-                          onValueChange={field.onChange} 
-                          value={field.value} 
+                          onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                          value={field.value ?? "none"} 
                           disabled={isCapsLoading || creditCardCaps.length === 0}
                         >
                           <FormControl>
@@ -949,6 +949,7 @@ export function AddExpenseDialog({
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
                             {creditCardCaps.map(cap => (
                               <SelectItem key={cap.id} value={cap.id}>
                                 {cap.capName} - ₹{Math.trunc(cap.remainingAmount).toLocaleString('en-IN')} remaining (₹{Math.trunc(cap.capCurrentAmount).toLocaleString('en-IN')}/₹{Math.trunc(cap.capTotalAmount).toLocaleString('en-IN')})
