@@ -146,6 +146,7 @@ export default function SplitwisePage() {
   const [isFetchingTransactions, setIsFetchingTransactions] = useState(false);
   const [isFetchingUnsettled, setIsFetchingUnsettled] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Lookup data
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -542,7 +543,7 @@ export default function SplitwisePage() {
   };
 
   const handleSyncSplitwise = async () => {
-    setIsLoading(true);
+    setIsSyncing(true);
     try {
       const response = await fetch("/api/splitwise-sync");
       if (!response.ok) {
@@ -565,7 +566,7 @@ export default function SplitwisePage() {
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setIsSyncing(false);
     }
   };
 
@@ -611,11 +612,11 @@ export default function SplitwisePage() {
                 variant="outline"
                 size="sm"
                 onClick={handleSyncSplitwise}
-                disabled={isLoading}
+                disabled={isSyncing || isLoading}
                 className="flex items-center gap-2 border-green-600 text-green-600 hover:bg-green-50"
               >
                 <RefreshCcw
-                  className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+                  className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`}
                 />
                 Sync Splitwise
               </Button>
@@ -623,7 +624,7 @@ export default function SplitwisePage() {
                 variant="outline"
                 size="sm"
                 onClick={() => fetchFriendsBalance(true)}
-                disabled={isLoading}
+                disabled={isLoading || isSyncing}
                 className="flex items-center gap-2 border-blue-600 text-blue-600 hover:bg-blue-50"
               >
                 <RefreshCw
