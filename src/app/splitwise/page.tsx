@@ -39,6 +39,11 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
 
 // ==================== TYPES ====================
 
@@ -147,6 +152,8 @@ export default function SplitwisePage() {
   const [isFetchingUnsettled, setIsFetchingUnsettled] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [settlementDate, setSettlementDate] = useState<Date>(new Date());
+  const [settlementTime, setSettlementTime] = useState<string>(format(new Date(), "HH:mm"));
 
   // Lookup data
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -446,6 +453,8 @@ export default function SplitwisePage() {
     setTransactions([]);
     setUnsettledExpenses([]);
     setExpenseSelections({});
+    setSettlementDate(new Date());
+    setSettlementTime(format(new Date(), "HH:mm"));
   };
 
   const handleCategoryChange = (
@@ -503,9 +512,25 @@ export default function SplitwisePage() {
 
     setIsSettling(true);
     try {
+      const alreadyPaidTotal = transactions.reduce(
+        (sum, t) => sum + (Number(t.amount) || 0),
+        0
+      );
+      const unsettledTotal = unsettledExpenses.reduce(
+        (sum, exp) => sum + (Number(exp.splitedAmount) || 0),
+        0
+      );
+
       const payload = {
         friendId: selectedFriend.friendId,
         bankAccountId: selectedBankAccount,
+        totalSettlementAmount: alreadyPaidTotal - unsettledTotal,
+        date: (() => {
+          const [hours, minutes] = settlementTime.split(':').map(Number);
+          const d = new Date(settlementDate);
+          d.setHours(hours, minutes, 0, 0);
+          return d.getTime();
+        })(),
         unsettledExpenses: unsettledExpenses.map((exp) => ({
           splitwiseTransactionId: exp.splitwiseTransactionId,
           date: exp.date,
@@ -801,6 +826,43 @@ export default function SplitwisePage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Settlement Date */}
+            <div className="space-y-2 max-w-md">
+              <label className="text-sm font-medium">Settlement Date</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full pl-3 text-left font-normal",
+                      !settlementDate && "text-muted-foreground"
+                    )}
+                  >
+                    {settlementDate ? format(settlementDate, "PPP") : <span>Pick a date</span>}
+                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={settlementDate}
+                    onSelect={(date) => date && setSettlementDate(date)}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Settlement Time */}
+            <div className="space-y-2 max-w-md">
+              <label className="text-sm font-medium">Settlement Time</label>
+              <Input
+                type="time"
+                value={settlementTime}
+                onChange={(e) => setSettlementTime(e.target.value)}
+              />
             </div>
 
             {/* Unsettled Expenses */}

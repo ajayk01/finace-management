@@ -14,7 +14,7 @@ interface UnsettledExpenseInput {
 
 export async function POST(request: NextRequest) {
   try {
-    const { friendId, bankAccountId, unsettledExpenses, settledTransactionIds, date } = await request.json();
+    const { friendId, bankAccountId, unsettledExpenses, settledTransactionIds, date, totalSettlementAmount: clientTotal } = await request.json();
     console.log(" unsettledExpenses ",unsettledExpenses);
     if (!friendId || !bankAccountId) {
       return NextResponse.json({ 
@@ -45,8 +45,7 @@ export async function POST(request: NextRequest) {
     // Use provided date or current date/time
     const settledDate = date || Date.now();
 
-    // Collect all splits to process and calculate total settlement amount
-    let totalSettlementAmount = 0;
+    // Collect all splits to process
     const allSplitsToProcess: Array<{
       splitwiseTransactionId: string;
       splitedAmount: number;
@@ -62,8 +61,10 @@ export async function POST(request: NextRequest) {
     if (unsettledExpenses && Array.isArray(unsettledExpenses) && unsettledExpenses.length > 0) {
       console.log(`Processing ${unsettledExpenses.length} unsettled expenses`);
 
-      for (const expense of unsettledExpenses as UnsettledExpenseInput[]) {
-        if (!expense.categoryId) {
+      for (const expense of unsettledExpenses as UnsettledExpenseInput[]) 
+      {
+        if (!expense.categoryId) 
+        {
           console.error(`Skipping expense ${expense.splitwiseTransactionId}: Missing category`);
           continue;
         }
@@ -75,9 +76,11 @@ export async function POST(request: NextRequest) {
           [expense.splitwiseTransactionId, friendDbId]
         );
 
+        const parsedAmount = parseFloat(String(expense.splitedAmount)) || 0;
+
         allSplitsToProcess.push({
           splitwiseTransactionId: expense.splitwiseTransactionId,
-          splitedAmount: expense.splitedAmount,
+          splitedAmount: parsedAmount,
           splitedTransactionId: stResult.length > 0 ? stResult[0].SPLITED_TRANSACTION_ID : null,
           description: expense.description,
           categoryId: expense.categoryId,
@@ -85,8 +88,6 @@ export async function POST(request: NextRequest) {
           transactionId: null,
           type: 'unsettled',
         });
-
-        totalSettlementAmount += expense.splitedAmount;
       }
     }
 
@@ -146,9 +147,11 @@ export async function POST(request: NextRequest) {
       friendName = transactions[0].FRIEND_NAME;
 
       for (const tx of transactions) {
+        const parsedTxAmount = parseFloat(String(tx.SPLITED_AMOUNT)) || 0;
+
         allSplitsToProcess.push({
           splitwiseTransactionId: tx.SPLITWISE_TX_ID.toString(),
-          splitedAmount: tx.SPLITED_AMOUNT,
+          splitedAmount: parsedTxAmount,
           splitedTransactionId: tx.SPLITED_TRANSACTION_ID,
           description: tx.NOTES || 'Splitwise expense',
           categoryId: tx.CATEGORY_ID,
@@ -156,13 +159,15 @@ export async function POST(request: NextRequest) {
           transactionId: tx.TRANSACTION_ID,
           type: 'settled',
         });
-
-        totalSettlementAmount += tx.SPLITED_AMOUNT;
       }
     }
 
+    // Use client-provided settlement amount (settled - unsettled)
+    const finalSettlementAmount = parseFloat(String(clientTotal)) || 0;
+    console.log(`Settlement amount from client: ${finalSettlementAmount}`);
+
     // 3. Create ONE settlement transaction for the total amount at the settlement date
-    if (totalSettlementAmount > 0) {
+    if (finalSettlementAmount !== 0) {
       const appTransactionIds = allSplitsToProcess.map(s => s.splitedTransactionId).filter(Boolean).join(', ');
       const settlementSql = `
         INSERT INTO Transactions 
@@ -171,7 +176,7 @@ export async function POST(request: NextRequest) {
       `;
 
       const settlementResult = await query(settlementSql, [
-        -totalSettlementAmount,
+        -finalSettlementAmount,
         settledDate,
         `Settlement : ${friendName} [${appTransactionIds}]`,
         accountId,
@@ -180,11 +185,11 @@ export async function POST(request: NextRequest) {
         TransactionType.EXPENSE
       ]);
 
-      console.log(`✅ Created ONE settlement transaction ID: ${settlementResult.insertId} for total ₹${totalSettlementAmount}`);
+      console.log(`✅ Created ONE settlement transaction ID: ${settlementResult.insertId} for total ₹${finalSettlementAmount}`);
 
       offsetEntries.push({
         id: settlementResult.insertId,
-        amount: totalSettlementAmount,
+        amount: finalSettlementAmount,
         description: `Settlement with ${friendName}`,
         type: 'settlement',
       });
@@ -198,7 +203,6 @@ export async function POST(request: NextRequest) {
           const updateSql = `
             UPDATE Transactions 
             SET AMOUNT = AMOUNT - ?, 
-                DATE = ?,
                 NOTES = CASE WHEN NOTES IS NULL OR NOTES = '' THEN CONCAT(?, ' : ', ?) ELSE CONCAT(NOTES, ', ', ?) END,
                 CATEGORY_ID = COALESCE(CATEGORY_ID, ?),
                 SUB_CATEGORY_ID = COALESCE(SUB_CATEGORY_ID, ?)
@@ -207,7 +211,6 @@ export async function POST(request: NextRequest) {
 
           await query(updateSql, [
             split.splitedAmount,
-            settledDate,
             split.splitwiseTransactionId,
             friendName,
             friendName,
@@ -215,7 +218,7 @@ export async function POST(request: NextRequest) {
             split.subCategoryId,
             split.splitedTransactionId
           ]);
-
+          console.log("sql was"+updateSql);
           console.log(`Updated dummy tx ${split.splitedTransactionId}: added ₹${split.splitedAmount} for ${friendName}`);
         }
 
@@ -249,7 +252,7 @@ export async function POST(request: NextRequest) {
     }
 
     const message = allSplitsToProcess.length > 0 
-      ? `Successfully settled ${allSplitsToProcess.length} transaction(s) for ${friendName} (₹${totalSettlementAmount})`
+      ? `Successfully settled ${allSplitsToProcess.length} transaction(s) for ${friendName} (₹${finalSettlementAmount})`
       : `No transactions to process for ${friendName}`;
 
     return NextResponse.json({

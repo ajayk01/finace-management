@@ -221,9 +221,13 @@ export function SettleUpDialog({ open, onOpenChange, friends, bankAccounts, cate
 
     setIsLoading(true);
     try {
+      const alreadyPaidTotal = transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+      const unsettledTotal = unsettledExpenses.reduce((sum, exp) => sum + (Number(exp.splitedAmount) || 0), 0);
+
       const payload = {
         friendId: selectedFriend.friendId,
         bankAccountId: selectedBankAccount,
+        totalSettlementAmount: alreadyPaidTotal - unsettledTotal,
         date: (() => {
           const [hours, minutes] = settlementTime.split(':').map(Number);
           const d = new Date(settlementDate);
