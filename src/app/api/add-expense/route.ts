@@ -425,10 +425,9 @@ export async function POST(request: NextRequest)
         if (includeSplitwise && customAmounts && splitwiseUserIds) 
         {
             const totalCustomAmount = Object.values(customAmounts).reduce((sum, amt) => sum + amt, 0);
-            let tempAmt = Math.ceil(amount)
-            //console.log("Total of custom amounts:", totalCustomAmount, "Expected amount:", amount, "Ceiled amount:", tempAmt);
+            //console.log("Total of custom amounts:", totalCustomAmount, "Expected amount:", amount);
 
-            if (Math.abs(totalCustomAmount - tempAmt) > 0.01) 
+            if (Math.abs(totalCustomAmount - amount) > 0.01) 
             {
                 return NextResponse.json({ 
                     error: `Custom amounts must total the expense amount. Total: ${totalCustomAmount}, Expected: ${amount}` 
