@@ -74,7 +74,14 @@ export async function GET()
             // Filter notifications:
             // 1. Created by others (not by current user)
             // 2. Created after the last sync time (skip old notifications)
-            notifications = allNotifications.filter((notification: any) => {
+            notifications = allNotifications.filter((notification: any) =>
+            {
+                // Skip "Settle all balances" notifications
+                if (notification.content && notification.content.toLowerCase().includes('settle all balance')) 
+                {
+                    return false;
+                }
+
                 // Check if created by others
                 const isFromOthers = notification.created_by && 
                                      SPLITWISE_CURRENT_USER_ID && 
@@ -119,7 +126,8 @@ export async function GET()
             // Check if source type is Expense
             if (notification.source && 
                 notification.source.type === 'Expense' && 
-                notification.source.id && notification.content.includes("added")) {
+                notification.source.id && notification.content.includes("added")) 
+            {
                 
                 try {
                     // Fetch expense details
