@@ -749,6 +749,7 @@ export function AllTransactionsDialog({
                           aria-label="Select all"
                         />
                       </TableHead>
+                      <TableHead>ID</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Description</TableHead>
@@ -767,6 +768,9 @@ export function AllTransactionsDialog({
                             onCheckedChange={(checked) => handleSelectOne(transaction.id, !!checked)}
                             aria-label={`Select transaction ${transaction.id}`}
                           />
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">
+                          {transaction.id}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {transaction.date || 'N/A'}

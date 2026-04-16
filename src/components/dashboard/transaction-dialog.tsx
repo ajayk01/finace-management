@@ -236,6 +236,7 @@ export function TransactionDialog({
                   <TableHeader>
                     <TableRow>
                       {isExcludable && <TableHead className="w-12 text-center">Exclude</TableHead>}
+                      <TableHead>ID</TableHead>
                       <TableHead>Date</TableHead>
                       {isMonthlySummary ? (
                         <>
@@ -264,6 +265,9 @@ export function TransactionDialog({
                             />
                           </TableCell>
                         )}
+                        <TableCell className="text-muted-foreground text-xs">
+                          {tx.id}
+                        </TableCell>
                         <TableCell className="text-muted-foreground whitespace-nowrap">
                           {formatDate(tx.date)}
                         </TableCell>

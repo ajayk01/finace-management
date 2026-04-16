@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { query, TransactionType, CategoryType } from '@/lib/db';
 import type { Transaction, Category, SubCategory, Account } from '@/types/database';
+import { getFromToDates, formatDateToDDMMYYYY } from '@/lib/date-utils';
+
 interface ExpenseItem 
 {
   year: number;
@@ -10,30 +12,6 @@ interface ExpenseItem
   category: string;
   subCategory: string;
   expense: string;
-}
-const monthMap: Record<string, number> = 
-{
-  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
-};
-function getFromToDates(month: string, year: number) {
-  const monthIndex = monthMap[month.toLowerCase()];
-
-    if (monthIndex === undefined) {
-        throw new Error("Invalid month provided. Please use full month names (e.g., 'Jan', 'February').");
-    }
-
-    const startDate = new Date(year, monthIndex, 1);
-    const endDate = new Date(year, monthIndex + 1, 0);
-
-    return { startDate, endDate };
-}
-
-function formatDateToDDMMYYYY(date: Date): string {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
-    const year = date.getFullYear();
-    return `${year}-${month}-${day}`;
 }
 
 async function fetchGroupedMonthlyExpensesFromDB({
@@ -265,5 +243,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
-export { getFromToDates, formatDateToDDMMYYYY };
+export { getFromToDates, formatDateToDDMMYYYY } from '@/lib/date-utils';
 export type { ExpenseItem };

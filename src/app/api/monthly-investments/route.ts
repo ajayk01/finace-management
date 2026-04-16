@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { query, TransactionType, AccountType } from '@/lib/db';
 import type { Transaction as DBTransaction, Account } from '@/types/database';
+import { getFromToDates, formatDateToDDMMYYYY } from '@/lib/date-utils';
 
 // Interfaces for data structures
 interface Transaction {
@@ -26,31 +27,6 @@ interface ExpenseItem {
 interface InvestmentAccount {
   id: string;
   name: string;
-}
-
-const monthMap: Record<string, number> = {
-  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
-};
-
-function getFromToDates(month: string, year: number) {
-  const monthIndex = monthMap[month.toLowerCase()];
-
-    if (monthIndex === undefined) {
-        throw new Error("Invalid month provided. Please use full month names (e.g., 'Jan', 'February').");
-    }
-
-    const startDate = new Date(year, monthIndex, 1);
-    const endDate = new Date(year, monthIndex + 1, 0);
-
-    return { startDate, endDate };
-}
-
-function formatDateToDDMMYYYY(date: Date): string {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${year}-${month}-${day}`;
 }
 
 async function fetchInvestmentAccountsFromDB(): Promise<InvestmentAccount[]> {

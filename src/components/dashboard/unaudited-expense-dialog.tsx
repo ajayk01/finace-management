@@ -326,6 +326,7 @@ export function UnauditedExpenseDialog({
                       aria-label="Select all"
                     />
                   </TableHead>
+                  <TableHead className="w-[80px]">ID</TableHead>
                   <TableHead className="w-[110px]">Date</TableHead>
                   <TableHead className="w-[120px]">Amount</TableHead>
                   <TableHead className="w-[180px]">Account</TableHead>
@@ -356,6 +357,7 @@ export function UnauditedExpenseDialog({
                           aria-label={`Select ${tx.id}`}
                         />
                       </TableCell>
+                      <TableCell className="text-muted-foreground text-xs">{tx.id}</TableCell>
                       <TableCell>{tx.date || "-"}</TableCell>
                       <TableCell>{tx.amount}</TableCell>
                       <TableCell>{tx.accountName || "-"}</TableCell>

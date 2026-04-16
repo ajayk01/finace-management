@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { query, TransactionType, CategoryType } from '@/lib/db';
+import { getFromToDates } from '@/lib/date-utils';
 
 interface Transaction {
   id: string;
@@ -16,24 +17,6 @@ interface Transaction {
   subCategoryId?: string;
   investmentAccountId?: string;
   investmentAccountName?: string;
-}
-
-const monthMap: Record<string, number> = {
-  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
-};
-
-function getFromToDates(month: string, year: number) {
-  const monthIndex = monthMap[month.toLowerCase()];
-
-  if (monthIndex === undefined) {
-    throw new Error("Invalid month provided. Please use full month names (e.g., 'Jan', 'February').");
-  }
-
-  const startDate = new Date(year, monthIndex, 1);
-  const endDate = new Date(year, monthIndex + 1, 0);
-
-  return { startDate, endDate };
 }
 
 async function fetchAllTransactionsFromDB({

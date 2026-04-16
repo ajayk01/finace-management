@@ -592,6 +592,7 @@ export function SplitwiseDialog({
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead>ID</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Description</TableHead>
                             <TableHead>Category</TableHead>
@@ -602,6 +603,7 @@ export function SplitwiseDialog({
                         <TableBody>
                           {transactions.map((transaction, index) => (
                             <TableRow key={transaction.id || `transaction-${index}`}>
+                              <TableCell className="text-muted-foreground text-xs">{transaction.id}</TableCell>
                               <TableCell>{new Date(transaction.date).toLocaleDateString()}</TableCell>
                               <TableCell>{transaction.description}</TableCell>
                               <TableCell>{transaction.category}</TableCell>
