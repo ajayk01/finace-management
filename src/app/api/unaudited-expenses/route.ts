@@ -51,6 +51,7 @@ async function fetchUnauditedExpenseTransactions(): Promise<UnauditedExpenseTran
 
   return (rows || [])
     .filter((r: any) => Number(r.AMOUNT) !== 0)
+    .filter((r: any) => !(r.NOTES && r.NOTES.toLowerCase().includes("settlement")))
     .map((r: any) => {
       const date = r.DATE ? new Date(r.DATE).toISOString().split("T")[0] : null;
       return {
