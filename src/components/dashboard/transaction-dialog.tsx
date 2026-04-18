@@ -59,6 +59,7 @@ interface Transaction {
     splitwiseTransactionId: string;
     friendId: string;
     friendName: string;
+    splitwiseFriendId: string;
     splitAmount: number;
   }[];
 }

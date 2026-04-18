@@ -64,6 +64,7 @@ import { ViewTransactionDetailsDialog } from './view-transaction-details-dialog'
 interface Transaction {
   id: string;
   date: string | null;
+  time?: string;
   description: string;
   amount: number;
   type: 'Income' | 'Expense' | 'Investment';
@@ -86,6 +87,7 @@ interface Transaction {
     splitwiseTransactionId: string;
     friendId: string;
     friendName: string;
+    splitwiseFriendId: string;
     splitAmount: number;
   }[];
 }
@@ -971,16 +973,21 @@ export function AllTransactionsDialog({
           initialValues={{
             amount: editingExpenseData.amount,
             date: editingExpenseData.date ? parse(editingExpenseData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            time: editingExpenseData.time || format(new Date(), 'HH:mm'),
             description: editingExpenseData.description,
             accountId: editingExpenseData.accountId || '',
             categoryId: editingExpenseData.categoryId || '',
             subCategoryId: editingExpenseData.subCategoryId || '',
             capId: editingExpenseData.capId || undefined,
-            includeSplitwise: !!editingExpenseData.splitwiseGroupId,
+            includeSplitwise: !!(editingExpenseData.splitwiseDetails && editingExpenseData.splitwiseDetails.length > 0),
             splitwiseGroupId: editingExpenseData.splitwiseGroupId || '',
-            splitwiseUserIds: editingExpenseData.splitwiseUserIds || [],
-            splitType: editingExpenseData.splitType || 'equal',
-            customAmounts: editingExpenseData.customAmounts || {},
+            splitwiseUserIds: editingExpenseData.splitwiseDetails
+              ? editingExpenseData.splitwiseDetails.map(d => d.splitwiseFriendId)
+              : [],
+            splitType: editingExpenseData.splitType || 'custom',
+            customAmounts: editingExpenseData.splitwiseDetails
+              ? Object.fromEntries(editingExpenseData.splitwiseDetails.map(d => [d.splitwiseFriendId, d.splitAmount]))
+              : {},
           }}
         />
       )}
@@ -1052,6 +1059,7 @@ export function AllTransactionsDialog({
           initialValues={{
             amount: editingIncomeData.amount,
             date: editingIncomeData.date ? parse(editingIncomeData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            time: editingIncomeData.time || format(new Date(), 'HH:mm'),
             description: editingIncomeData.description,
             accountId: editingIncomeData.accountId || '',
             categoryId: editingIncomeData.categoryId || '',
@@ -1114,6 +1122,7 @@ export function AllTransactionsDialog({
           initialValues={{
             amount: editingInvestmentData.amount,
             date: editingInvestmentData.date ? parse(editingInvestmentData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            time: editingInvestmentData.time || format(new Date(), 'HH:mm'),
             description: editingInvestmentData.description,
             accountId: editingInvestmentData.accountId || '',
             investmentAccountId: editingInvestmentData.investmentAccountId || '',

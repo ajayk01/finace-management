@@ -575,17 +575,28 @@ const updateExpenseSchema = z.object({
   }),
   categoryId: z.string(),
   subCategoryId: z.string().optional(),
-  capId: z.string().optional(), // Credit card cap ID for updates
+  capId: z.string().optional(),
+  includeSplitwise: z.boolean().optional(),
+  splitwiseGroupId: z.string().optional(),
+  splitwiseUserIds: z.array(z.string()).optional(),
+  splitwiseGroupName: z.string().optional(),
+  splitType: z.enum(['equal', 'custom']).optional(),
+  customAmounts: z.record(z.string(), z.number()).optional(),
 });
 
 export async function PUT(request: NextRequest) {
+    // Ensure mapping is up to date for splitwise operations
+    await createSplitwiseToDbMapping();
+
     try {
         const body = await request.json();
         const parsedData = updateExpenseSchema.parse(body);
-        const { id, amount, charges, date, description, account, categoryId, subCategoryId, capId } = parsedData;
+        const { id, amount, charges, date, description, account, categoryId, subCategoryId, capId, includeSplitwise, splitwiseGroupId, splitwiseUserIds, splitType, customAmounts: rawCustomAmounts } = parsedData;
 
         const epochTime = new Date(date).getTime();
+        const transactionId = parseInt(id);
 
+        // Update the main transaction
         const sql = `
             UPDATE Transactions 
             SET DATE = ?,
@@ -604,28 +615,157 @@ export async function PUT(request: NextRequest) {
             parseInt(account.id),
             parseInt(categoryId),
             subCategoryId ? parseInt(subCategoryId) : null,
-            parseInt(id),
+            transactionId,
             TransactionType.EXPENSE
         ]);
         
         // Handle credit card cap transaction for updates
         if (account.type === 'Credit Card') {
-            // Delete old CreditCardTransactions entry
             const deleteRewardsSql = `
                 DELETE FROM CreditCardTransactions 
                 WHERE TransactionId = ?
             `;
-            await query(deleteRewardsSql, [parseInt(id)]);
+            await query(deleteRewardsSql, [transactionId]);
             
-            // Now create new cap transaction if capId is provided
             if (capId) {
                 await createCreditCardTransaction({
-                    transactionId: parseInt(id),
+                    transactionId,
                     creditCardId: account.id,
                     capId,
                     amount
                 });
             }
+        }
+
+        // --- Splitwise handling ---
+        // Check if this transaction already has splitwise records
+        const existingSplitwise = await query<{
+            SPLITWISE_TRANSACTION_ID: string;
+            FRIEND_ID: number;
+            SPLITED_TRANSACTION_ID: number | null;
+        }>(
+            `SELECT SPLITWISE_TRANSACTION_ID, FRIEND_ID, SPLITED_TRANSACTION_ID 
+             FROM SplitwiseTransactions WHERE TRANSACTION_ID = ?`,
+            [transactionId]
+        );
+        const hadSplitwise = existingSplitwise.length > 0;
+
+        if (hadSplitwise) {
+            // Delete existing splitwise expense from Splitwise API
+            const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
+            const existingSwTxIds = [...new Set(existingSplitwise.map((r: { SPLITWISE_TRANSACTION_ID: string }) => r.SPLITWISE_TRANSACTION_ID))];
+            
+            if (SPLITWISE_API_KEY) {
+                for (const swTxId of existingSwTxIds) {
+                    try {
+                        const res = await fetch(
+                            `https://secure.splitwise.com/api/v3.0/delete_expense/${swTxId}`,
+                            {
+                                method: 'POST',
+                                headers: { 'Authorization': `Bearer ${SPLITWISE_API_KEY}` },
+                            }
+                        );
+                        if (res.ok) {
+                            console.log(`✅ Deleted old Splitwise expense ${swTxId} during update`);
+                        } else {
+                            console.warn(`⚠️ Failed to delete old Splitwise expense ${swTxId}: ${res.status}`);
+                        }
+                    } catch (swError) {
+                        console.warn(`⚠️ Error deleting old Splitwise expense ${swTxId}:`, swError);
+                    }
+                }
+            }
+
+            // Delete dummy transactions linked to old splitwise records
+            const dummyTxIds = [...new Set(
+                existingSplitwise
+                    .filter((r: { SPLITED_TRANSACTION_ID: number | null }) => r.SPLITED_TRANSACTION_ID != null)
+                    .map((r: { SPLITED_TRANSACTION_ID: number | null }) => r.SPLITED_TRANSACTION_ID!)
+            )];
+            
+            // Delete old SplitwiseTransactions records
+            await query(`DELETE FROM SplitwiseTransactions WHERE TRANSACTION_ID = ?`, [transactionId]);
+            console.log(`✅ Deleted old SplitwiseTransactions records for transaction ${transactionId}`);
+
+            // Delete dummy transactions
+            for (const dummyId of dummyTxIds) {
+                await query(`DELETE FROM Transactions WHERE ID = ? AND AMOUNT = 0`, [dummyId]);
+                console.log(`✅ Deleted dummy transaction ${dummyId}`);
+            }
+        }
+
+        if (includeSplitwise && splitwiseGroupId && splitwiseUserIds && splitwiseUserIds.length > 0) {
+            // Calculate split amounts
+            let computedCustomAmounts = rawCustomAmounts;
+            let splitAmt: number;
+
+            if (splitType === 'custom' && computedCustomAmounts && Object.keys(computedCustomAmounts).length > 0) {
+                splitAmt = Object.values(computedCustomAmounts).reduce((sum, amt) => sum + amt, 0);
+            } else {
+                // Equal split
+                const totalCents = Math.round(amount * 100);
+                const baseCents = Math.floor(totalCents / splitwiseUserIds.length);
+                const remainderCents = totalCents - (baseCents * splitwiseUserIds.length);
+                
+                computedCustomAmounts = {};
+                splitwiseUserIds.forEach((userId, index) => {
+                    const userCents = baseCents + (index < remainderCents ? 1 : 0);
+                    computedCustomAmounts![userId] = userCents / 100;
+                });
+                splitAmt = Object.values(computedCustomAmounts).reduce((sum, amt) => sum + amt, 0);
+            }
+
+            // Create new Splitwise expense
+            const splitwiseResponse = await addSplitwiseExpense({
+                amount: splitAmt,
+                description: description || 'No description',
+                groupId: splitwiseGroupId,
+                userIds: splitwiseUserIds,
+                splitType: 'custom',
+                customAmounts: computedCustomAmounts,
+                date: date
+            });
+
+            const splitwiseTransactionId = splitwiseResponse?.expenses?.[0]?.id?.toString() || splitwiseResponse?.id?.toString();
+            console.log(`✅ Created new Splitwise expense ${splitwiseTransactionId} during update`);
+
+            // Create new dummy transaction
+            const dummyTxId = await createDummyTransaction({
+                date,
+                description,
+                categoryId,
+                subCategoryId,
+            });
+            console.log(`✅ Created dummy transaction ${dummyTxId} for updated splitwise expense`);
+
+            // Create SplitwiseTransactions records for each friend
+            const promises = splitwiseUserIds.map(async (userId) => {
+                if (userId.includes(CURRENT_USER_ID)) {
+                    return;
+                }
+                
+                const dbFriendId = userMapping.get(userId);
+                if (!dbFriendId) {
+                    console.warn(`⚠️ Friend ID not found for Splitwise user ${userId}`);
+                    return;
+                }
+                
+                const splitAmount = computedCustomAmounts?.[userId];
+                if (!splitAmount) {
+                    throw new Error(`Custom amount not found for user ${userId}`);
+                }
+                
+                await createSplitwiseTransaction({
+                    transactionId,
+                    friendId: dbFriendId,
+                    amount: splitAmount,
+                    splitwiseTransactionId: splitwiseTransactionId!,
+                    splitedTransactionId: dummyTxId,
+                });
+            });
+            
+            await Promise.all(promises);
+            console.log(`✅ Created new Splitwise records for updated transaction ${transactionId}`);
         }
         
         // Create a separate charges transaction if charges > 0

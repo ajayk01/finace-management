@@ -7,12 +7,14 @@ interface SplitwiseDetail {
   splitwiseTransactionId: string;
   friendId: string;
   friendName: string;
+  splitwiseFriendId: string;
   splitAmount: number;
 }
 
 interface Transaction {
   id: string;
   date: string | null;
+  time: string;
   description: string;
   amount: number;
   type: 'Income' | 'Expense' | 'Investment' | 'Transfer';
@@ -136,6 +138,7 @@ async function fetchAllTransactionsFromDB({
         return {
           id: tx.ID.toString(),
           date: new Date(tx.DATE).toISOString().split('T')[0],
+          time: new Date(tx.DATE).toTimeString().slice(0, 5),
           description: tx.NOTES || 'No Description',
           amount: Number(tx.AMOUNT),
           type,
@@ -160,9 +163,10 @@ async function fetchAllTransactionsFromDB({
         SPLITWISE_TRANSACTION_ID: string;
         FRIEND_ID: number;
         FRIEND_NAME: string;
+        SPLITWISE_FRIEND_ID: number;
         SPLITED_AMOUNT: number;
       }>(
-        `SELECT st.TRANSACTION_ID, st.SPLITWISE_TRANSACTION_ID, st.FRIEND_ID, sf.NAME AS FRIEND_NAME, st.SPLITED_AMOUNT
+        `SELECT st.TRANSACTION_ID, st.SPLITWISE_TRANSACTION_ID, st.FRIEND_ID, sf.NAME AS FRIEND_NAME, sf.SPLITWISE_FRIEND_ID, st.SPLITED_AMOUNT
          FROM SplitwiseTransactions st
          INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
          WHERE st.TRANSACTION_ID IN (${placeholders})`,
@@ -180,6 +184,7 @@ async function fetchAllTransactionsFromDB({
           splitwiseTransactionId: row.SPLITWISE_TRANSACTION_ID,
           friendId: row.FRIEND_ID.toString(),
           friendName: row.FRIEND_NAME,
+          splitwiseFriendId: row.SPLITWISE_FRIEND_ID.toString(),
           splitAmount: Number(row.SPLITED_AMOUNT),
         });
       }
