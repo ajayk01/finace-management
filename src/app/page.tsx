@@ -7,7 +7,6 @@ import { MonthlySummaryChart } from "@/components/dashboard/monthly-summary-char
 import { MonthlyMoneyTable, type FinancialSnapshotItem } from "@/components/dashboard/monthly-money-table";
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog"; // Import new component
 import { InvestmentCalculatorDialog } from "@/components/dashboard/investment-calculator-dialog";
-import { AllTransactionsDialog } from "@/components/dashboard/all-transactions-dialog";
 import { AddExpenseDialog } from "@/components/dashboard/add-expense-dialog";
 import { AddIncomeDialog } from "@/components/dashboard/add-income-dialog";
 import { AddInvestmentDialog } from "@/components/dashboard/add-investment-dialog";
@@ -228,9 +227,6 @@ export default function DashboardPage() {
   
   // State for investment calculator dialog
   const [isInvestmentCalculatorOpen, setIsInvestmentCalculatorOpen] = useState(false);
-  
-  // State for All Transactions dialog
-  const [isAllTransactionsDialogOpen, setIsAllTransactionsDialogOpen] = useState(false);
   
   // State for View Caps dialog
   const [isViewCapsDialogOpen, setIsViewCapsDialogOpen] = useState(false);
@@ -906,7 +902,6 @@ export default function DashboardPage() {
         onIncomeAdded={handleIncomeAdded}
         onInvestmentAdded={handleInvestmentAdded}
         onPaymentMade={handlePaymentMade}
-        onOpenAllTransactionsDialog={() => setIsAllTransactionsDialogOpen(true)}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1127,31 +1122,6 @@ export default function DashboardPage() {
         onOpenChange={setIsInvestmentCalculatorOpen}
         investmentAccounts={investmentCategories}
         onXirrCalculated={handleXirrCalculated}
-      />
-      <AllTransactionsDialog
-        open={isAllTransactionsDialogOpen}
-        onOpenChange={setIsAllTransactionsDialogOpen}
-        onTransactionUpdated={() => {
-          fetchBankDetails();
-          fetchCreditCardDetails();
-        }}
-        expenseCategories={expenseCategories}
-        expenseSubCategories={expenseSubCategories}
-        incomeCategories={incomeCategories}
-        incomeSubCategories={incomeSubCategories}
-        bankAccounts={apiBankAccounts.map(acc => ({
-          id: acc.id,
-          name: acc.name,
-          type: 'Bank' as const,
-          balance: acc.balance
-        }))}
-        creditCards={apiCreditCards.map(card => ({
-          id: card.id,
-          name: card.name,
-          type: 'Credit Card' as const,
-          usedAmount: card.usedAmount,
-          totalLimit: card.totalLimit
-        }))}
       />
 
       <ViewCapsDialog

@@ -69,7 +69,6 @@ interface DashboardHeaderProps {
   onInvestmentAdded: (newInvestment: Transaction, fromAccountId: string) => void;
   onPaymentMade: (payment: Transaction, fromBankId: string, toCreditCardId: string, amount: number) => void;
   onTransferAdded?: (newTransfer: Transaction, fromAccountId: string, toAccountId: string) => void;
-  onOpenAllTransactionsDialog?: () => void;
 }
 
 export function DashboardHeader({ 
@@ -85,7 +84,6 @@ export function DashboardHeader({
     onInvestmentAdded,
     onPaymentMade,
     onTransferAdded,
-    onOpenAllTransactionsDialog
 }: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -186,7 +184,7 @@ export function DashboardHeader({
                     <DropdownMenuItem onClick={() => setIsAddCapOpen(true)}>Add Cap</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => router.push('/splitwise')}>Splitwise</DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={onOpenAllTransactionsDialog}>Get All Transactions</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push('/transactions')}>Get All Transactions</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setIsUnauditedExpenseOpen(true)}>Unaudited Expense</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsPayCCBillOpen(true)}>Pay CC bill</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => router.push('/mf-investments')}>Check MF Investment</DropdownMenuItem>

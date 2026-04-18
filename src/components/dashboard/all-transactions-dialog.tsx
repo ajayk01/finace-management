@@ -52,7 +52,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { CalendarIcon, Loader2, Edit2, Trash2, Copy, X, Eye } from 'lucide-react';
+import { CalendarIcon, Loader2, Edit2, Trash2, Copy, X, Eye, Users } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -767,6 +767,7 @@ export function AllTransactionsDialog({
                       <TableHead>Category</TableHead>
                       <TableHead>Account</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Splitwise</TableHead>
                       <TableHead className="text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -821,6 +822,24 @@ export function AllTransactionsDialog({
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           ₹{transaction.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell>
+                          {transaction.splitwiseDetails && transaction.splitwiseDetails.length > 0 ? (
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-1">
+                                <Users className="h-3 w-3 text-orange-500" />
+                                <span className="text-xs font-medium text-orange-600">Split</span>
+                              </div>
+                              {transaction.splitwiseDetails.map((detail, idx) => (
+                                <div key={idx} className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="text-muted-foreground truncate max-w-[80px]">{detail.friendName}</span>
+                                  <span className="font-medium text-orange-600 whitespace-nowrap">₹{detail.splitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-center gap-2">
