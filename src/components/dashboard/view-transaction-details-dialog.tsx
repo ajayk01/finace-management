@@ -43,7 +43,7 @@ interface Transaction {
   date: string | null;
   description: string;
   amount: number;
-  type: "Income" | "Expense" | "Investment" | "Transfer" | "Other";
+  type: "Income" | "Expense" | "Investment" | "Transfer" | "Splitwise Settlement" | "Other";
   category?: string;
   subCategory?: string;
   accountId?: string;
@@ -95,6 +95,8 @@ const getTypeBadgeClasses = (type: string) => {
       return "bg-blue-600 text-white hover:bg-blue-600/80";
     case "Transfer":
       return "bg-purple-600 text-white hover:bg-purple-600/80";
+    case "Splitwise Settlement":
+      return "bg-orange-600 text-white hover:bg-orange-600/80";
     default:
       return "";
   }

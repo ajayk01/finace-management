@@ -67,7 +67,7 @@ interface Transaction {
   time?: string;
   description: string;
   amount: number;
-  type: 'Income' | 'Expense' | 'Investment';
+  type: 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Splitwise Settlement';
   category?: string;
   subCategory?: string;
   accountId?: string;
@@ -149,7 +149,7 @@ export function AllTransactionsDialog({
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
   const [viewDetailsTransaction, setViewDetailsTransaction] = useState<Transaction | null>(null);
-  const [typeFilter, setTypeFilter] = useState<'All' | 'Income' | 'Expense' | 'Investment'>('All');
+  const [typeFilter, setTypeFilter] = useState<'All' | 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Splitwise Settlement'>('All');
   const [accountFilter, setAccountFilter] = useState<string>('All');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const monthMap = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -595,6 +595,8 @@ export function AllTransactionsDialog({
         return 'destructive';
       case 'Investment':
         return 'secondary';
+      case 'Splitwise Settlement':
+        return 'outline';
       default:
         return 'outline';
     }
@@ -674,6 +676,8 @@ export function AllTransactionsDialog({
                     <SelectItem value="Income">Income</SelectItem>
                     <SelectItem value="Expense">Expense</SelectItem>
                     <SelectItem value="Investment">Investment</SelectItem>
+                    <SelectItem value="Transfer">Transfer</SelectItem>
+                    <SelectItem value="Splitwise Settlement">Splitwise Settlement</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -790,7 +794,7 @@ export function AllTransactionsDialog({
                         <TableCell>
                           <Badge 
                             variant={getTypeBadgeVariant(transaction.type)}
-                            className={transaction.type === 'Income' ? 'bg-green-600 text-white hover:bg-green-600/80' : ''}
+                            className={transaction.type === 'Income' ? 'bg-green-600 text-white hover:bg-green-600/80' : transaction.type === 'Splitwise Settlement' ? 'bg-orange-600 text-white hover:bg-orange-600/80' : ''}
                           >
                             {transaction.type}
                           </Badge>

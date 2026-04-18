@@ -17,7 +17,7 @@ interface Transaction {
   time: string;
   description: string;
   amount: number;
-  type: 'Income' | 'Expense' | 'Investment' | 'Transfer';
+  type: 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Splitwise Settlement';
   category?: string;
   subCategory?: string;
   accountId?: string;
@@ -97,7 +97,7 @@ async function fetchAllTransactionsFromDB({
       .filter((tx: any) => tx.AMOUNT !== 0)
       .filter((tx: any) => tx.FROM_ACCOUNT_ID != null || tx.TO_ACCOUNT_ID != null)
       .map((tx: any) => {
-        let type: 'Income' | 'Expense' | 'Investment' | 'Transfer' = 'Expense';
+        let type: 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Splitwise Settlement' = 'Expense';
         let category = '';
         let subCategory = '';
         let accountId = '';
@@ -133,6 +133,12 @@ async function fetchAllTransactionsFromDB({
           accountName = tx.FROM_ACCOUNT_NAME || '';
           investmentAccountId = tx.TO_ACCOUNT_ID?.toString() || '';
           investmentAccountName = tx.TO_ACCOUNT_NAME || '';
+        } else if (tx.TRANSCATION_TYPE === TransactionType.SPLITWISE_SETTLEMENT) {
+          type = 'Splitwise Settlement';
+          category = tx.CATEGORY_NAME || '';
+          subCategory = tx.SUB_CATEGORY_NAME || '';
+          accountId = tx.FROM_ACCOUNT_ID?.toString() || '';
+          accountName = tx.FROM_ACCOUNT_NAME || '';
         }
 
         return {

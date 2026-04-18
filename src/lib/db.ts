@@ -121,7 +121,8 @@ export enum TransactionType {
   INCOME = 2,
   TRANSFER = 3,
   INVESTMENT = 4,
-  INVEST_WITHDRAW=5
+  INVEST_WITHDRAW=5,
+  SPLITWISE_SETTLEMENT = 8,
 
 }
 

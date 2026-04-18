@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
         accountId,
         null, // No single category for combined settlement
         null,
-        TransactionType.EXPENSE
+        TransactionType.SPLITWISE_SETTLEMENT
       ]);
 
       console.log(`✅ Created ONE settlement transaction ID: ${settlementResult.insertId} for total ₹${finalSettlementAmount}`);
