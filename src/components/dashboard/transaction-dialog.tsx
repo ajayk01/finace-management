@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, Loader2, Edit2, Copy, Trash2 } from "lucide-react";
+import { AlertCircle, Loader2, Edit2, Copy, Trash2, Eye } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,6 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import type { Category } from "./add-expense-dialog";
+import { ViewTransactionDetailsDialog } from "./view-transaction-details-dialog";
 
 interface Transaction {
   id: string;
@@ -54,6 +55,12 @@ interface Transaction {
   investmentAccountName?: string;
   capId?: string;
   rewards?: number;
+  splitwiseDetails?: {
+    splitwiseTransactionId: string;
+    friendId: string;
+    friendName: string;
+    splitAmount: number;
+  }[];
 }
 
 interface TransactionDialogProps {
@@ -133,8 +140,10 @@ export function TransactionDialog({
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
   const [transactionToDelete, setTransactionToDelete] = React.useState<Transaction | null>(null);
+  const [viewDetailsOpen, setViewDetailsOpen] = React.useState(false);
+  const [viewDetailsTransaction, setViewDetailsTransaction] = React.useState<Transaction | null>(null);
 
-  const hasActions = !!(onEdit || onDuplicate || onDelete);
+  const hasActions = true; // Always show actions column for view details
 
   const handleDeleteClick = (tx: Transaction) => {
     setTransactionToDelete(tx);
@@ -298,6 +307,18 @@ export function TransactionDialog({
                         {hasActions && (
                           <TableCell>
                             <div className="flex items-center justify-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => {
+                                  setViewDetailsTransaction(tx);
+                                  setViewDetailsOpen(true);
+                                }}
+                                title="View Details"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
                               {onEdit && tx.type !== 'Other' && (
                                 <Button
                                   variant="ghost"
@@ -391,6 +412,13 @@ export function TransactionDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    {/* View Transaction Details Dialog */}
+    <ViewTransactionDetailsDialog
+      open={viewDetailsOpen}
+      onOpenChange={setViewDetailsOpen}
+      transaction={viewDetailsTransaction}
+    />
     </>
   );
 }

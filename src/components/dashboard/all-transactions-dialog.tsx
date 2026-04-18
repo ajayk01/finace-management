@@ -52,7 +52,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { CalendarIcon, Loader2, Edit2, Trash2, Copy, X } from 'lucide-react';
+import { CalendarIcon, Loader2, Edit2, Trash2, Copy, X, Eye } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -60,6 +60,7 @@ import { transaction } from '@/lib/db';
 import { AddExpenseDialog } from './add-expense-dialog';
 import { AddIncomeDialog } from './add-income-dialog';
 import { AddInvestmentDialog } from './add-investment-dialog';
+import { ViewTransactionDetailsDialog } from './view-transaction-details-dialog';
 interface Transaction {
   id: string;
   date: string | null;
@@ -81,6 +82,12 @@ interface Transaction {
   splitType?: 'equal' | 'custom';
   customAmounts?: Record<string, number>;
   capId?: string;
+  splitwiseDetails?: {
+    splitwiseTransactionId: string;
+    friendId: string;
+    friendName: string;
+    splitAmount: number;
+  }[];
 }
 
 interface Category {
@@ -138,6 +145,8 @@ export function AllTransactionsDialog({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
+  const [viewDetailsTransaction, setViewDetailsTransaction] = useState<Transaction | null>(null);
   const [typeFilter, setTypeFilter] = useState<'All' | 'Income' | 'Expense' | 'Investment'>('All');
   const [accountFilter, setAccountFilter] = useState<string>('All');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -608,7 +617,7 @@ export function AllTransactionsDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col p-0">
+        <DialogContent className="max-w-[95vw] max-h-[90vh] flex flex-col p-0">
           <DialogHeader className="px-6 pt-6 pb-4">
             <DialogTitle>All Transactions</DialogTitle>
             <DialogDescription>
@@ -813,6 +822,17 @@ export function AllTransactionsDialog({
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setViewDetailsTransaction(transaction);
+                                setViewDetailsOpen(true);
+                              }}
+                              title="View Details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -1127,6 +1147,13 @@ export function AllTransactionsDialog({
           }}
         />
       )}
+
+      {/* View Transaction Details Dialog */}
+      <ViewTransactionDetailsDialog
+        open={viewDetailsOpen}
+        onOpenChange={setViewDetailsOpen}
+        transaction={viewDetailsTransaction}
+      />
     </>
   );
 }
