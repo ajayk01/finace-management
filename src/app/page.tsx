@@ -17,7 +17,7 @@ import type { InvestmentCategory } from "@/components/dashboard/add-investment-d
 import { ViewCapsDialog } from "@/components/dashboard/view-caps-dialog";
 import { PayCCBillDialog } from "@/components/dashboard/pay-cc-bill-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { parse } from 'date-fns';
+import { parse, format } from 'date-fns';
 
 // Helper function to format currency in Indian format
 const formatIndianCurrency = (amount: number): string => {
@@ -68,6 +68,7 @@ interface CreditCardAccount {
 export interface Transaction {
   id: string;
   date: string | null;
+  time?: string;
   description: string;
   amount: number;
   type: 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Other';
@@ -1168,6 +1169,7 @@ export default function DashboardPage() {
           initialValues={{
             amount: txDialogEditExpenseData.amount,
             date: txDialogEditExpenseData.date ? parse(txDialogEditExpenseData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            time: txDialogEditExpenseData.time || format(new Date(), 'HH:mm'),
             description: txDialogEditExpenseData.description,
             accountId: txDialogEditExpenseData.accountId || '',
             categoryId: txDialogEditExpenseData.categoryId || '',
@@ -1222,6 +1224,7 @@ export default function DashboardPage() {
           initialValues={{
             amount: txDialogEditIncomeData.amount,
             date: txDialogEditIncomeData.date ? parse(txDialogEditIncomeData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            time: txDialogEditIncomeData.time || format(new Date(), 'HH:mm'),
             description: txDialogEditIncomeData.description,
             accountId: txDialogEditIncomeData.accountId || '',
             categoryId: txDialogEditIncomeData.categoryId || '',
@@ -1268,6 +1271,7 @@ export default function DashboardPage() {
           initialValues={{
             amount: txDialogEditInvestmentData.amount,
             date: txDialogEditInvestmentData.date ? parse(txDialogEditInvestmentData.date, 'yyyy-MM-dd', new Date()) : new Date(),
+            time: txDialogEditInvestmentData.time || format(new Date(), 'HH:mm'),
             description: txDialogEditInvestmentData.description,
             accountId: txDialogEditInvestmentData.accountId || '',
             investmentAccountId: txDialogEditInvestmentData.investmentAccountId || '',

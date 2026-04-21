@@ -42,6 +42,7 @@ import { ViewTransactionDetailsDialog } from "./view-transaction-details-dialog"
 interface Transaction {
   id: string;
   date: string | null;
+  time?: string;
   description: string;
   amount: number;
   type: 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Other';

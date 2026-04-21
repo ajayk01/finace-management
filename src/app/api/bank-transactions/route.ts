@@ -8,6 +8,7 @@ import { getFromToDates } from '@/lib/date-utils';
 interface Transaction {
     id: string;
     date: string | null;
+    time: string;
     description: string;
     amount: number;
     type: 'Income' | 'Expense' | 'Investment' | 'Other';
@@ -122,9 +123,11 @@ async function fetchBankTransactionsFromDB(
         investmentAccountName = tx.TO_ACCOUNT_NAME || '';
       }
 
+      const txDate = new Date(tx.DATE);
       return {
         id: tx.ID.toString(),
-        date: new Date(tx.DATE).toISOString().split('T')[0],
+        date: txDate.toISOString().split('T')[0],
+        time: txDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
         description: tx.NOTES || 'No Description',
         amount: tx.AMOUNT,
         type,
