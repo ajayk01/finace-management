@@ -903,6 +903,12 @@ export default function DashboardPage() {
         onIncomeAdded={handleIncomeAdded}
         onInvestmentAdded={handleInvestmentAdded}
         onPaymentMade={handlePaymentMade}
+        onCategoryAdded={() => {
+          // Clear cache and re-fetch categories
+          dataCache.current = {};
+          fetchExpenses(selectedExpenseMonth, selectedExpenseYear);
+          fetchIncome(selectedIncomeMonth, selectedIncomeYear);
+        }}
       />
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

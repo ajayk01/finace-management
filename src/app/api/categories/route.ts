@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { query, CategoryType } from '@/lib/db';
 import type { Category as DBCategory, SubCategory as DBSubCategory } from '@/types/database';
+import { z } from 'zod';
 
 export async function GET(request: NextRequest) {
   try {
@@ -59,6 +60,61 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching categories:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while fetching categories.';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
+}
+
+const addCategorySchema = z.object({
+  categoryName: z.string().min(1, 'Category name is required.'),
+  categoryType: z.enum(['expense', 'income'], { required_error: 'Category type is required.' }),
+  budget: z.coerce.number().min(0, 'Budget must be non-negative.').default(0),
+});
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const parsed = addCategorySchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.errors.map(e => e.message).join(', ') },
+        { status: 400 }
+      );
+    }
+
+    const { categoryName, categoryType, budget } = parsed.data;
+    const typeValue = categoryType === 'expense' ? CategoryType.EXPENSE : CategoryType.INCOME;
+
+    // Check if a category with the same name and type already exists
+    const existing = await query(
+      'SELECT ID FROM Category WHERE CATEGORY_NAME = ? AND CATEGORY_TYPE = ?',
+      [categoryName, typeValue]
+    );
+
+    if (existing && existing.length > 0) {
+      return NextResponse.json(
+        { error: `A ${categoryType} category with the name "${categoryName}" already exists.` },
+        { status: 409 }
+      );
+    }
+
+    const result = await query(
+      'INSERT INTO Category (CATEGORY_NAME, BUDGET, CATEGORY_TYPE) VALUES (?, ?, ?)',
+      [categoryName, budget, typeValue]
+    );
+
+    const newId = result.insertId;
+
+    return NextResponse.json({
+      id: newId.toString(),
+      name: categoryName,
+      budget,
+      type: categoryType === 'expense' ? 'Expense' : 'Income',
+    }, { status: 201 });
+
+  } catch (error) {
+    console.error('Error adding category:', error);
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while adding category.';
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

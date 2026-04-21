@@ -47,6 +47,8 @@ import { PayCCBillDialog } from './pay-cc-bill-dialog';
 import { AddAccountDialog } from './add-account-dialog';
 import { AddTransferDialog } from './add-transfer-dialog';
 import { UnauditedExpenseDialog } from './unaudited-expense-dialog';
+import { AddCategoryDialog } from './add-category-dialog';
+import { AddSubCategoryDialog } from './add-sub-category-dialog';
 import type { Category, SubCategory, Account } from './add-expense-dialog';
 import type { SplitwiseGroup } from './add-expense-dialog';
 import type { InvestmentCategory } from './add-investment-dialog';
@@ -69,6 +71,7 @@ interface DashboardHeaderProps {
   onInvestmentAdded: (newInvestment: Transaction, fromAccountId: string) => void;
   onPaymentMade: (payment: Transaction, fromBankId: string, toCreditCardId: string, amount: number) => void;
   onTransferAdded?: (newTransfer: Transaction, fromAccountId: string, toAccountId: string) => void;
+  onCategoryAdded?: () => void;
 }
 
 export function DashboardHeader({ 
@@ -84,6 +87,7 @@ export function DashboardHeader({
     onInvestmentAdded,
     onPaymentMade,
     onTransferAdded,
+    onCategoryAdded,
 }: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -96,6 +100,8 @@ export function DashboardHeader({
   const [isAddTransferOpen, setIsAddTransferOpen] = useState(false);
   const [isAddCapOpen, setIsAddCapOpen] = useState(false);
   const [isUnauditedExpenseOpen, setIsUnauditedExpenseOpen] = useState(false);
+  const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
+  const [isAddSubCategoryOpen, setIsAddSubCategoryOpen] = useState(false);
 
   const [selectedCreditCardForCap, setSelectedCreditCardForCap] = useState<string>('');
   const [splitwiseGroups, setSplitwiseGroups] = useState<SplitwiseGroup[]>([]);
@@ -181,6 +187,8 @@ export function DashboardHeader({
                 <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => setIsAddAccountOpen(true)}>Add Account</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsAddTransferOpen(true)}>Add Transfer</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setIsAddCategoryOpen(true)}>Add Category</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setIsAddSubCategoryOpen(true)}>Add Sub-Category</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsAddCapOpen(true)}>Add Cap</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => router.push('/splitwise')}>Splitwise</DropdownMenuItem>
                     <DropdownMenuSeparator />
@@ -268,6 +276,18 @@ export function DashboardHeader({
         onOpenChange={setIsUnauditedExpenseOpen}
         expenseCategories={expenseCategories}
         expenseSubCategories={expenseSubCategories}
+      />
+      <AddCategoryDialog
+        open={isAddCategoryOpen}
+        onOpenChange={setIsAddCategoryOpen}
+        onCategoryAdded={onCategoryAdded}
+      />
+      <AddSubCategoryDialog
+        open={isAddSubCategoryOpen}
+        onOpenChange={setIsAddSubCategoryOpen}
+        expenseCategories={expenseCategories}
+        incomeCategories={incomeCategories}
+        onSubCategoryAdded={onCategoryAdded}
       />
       <AddCapHeaderDialog
         open={isAddCapOpen}
