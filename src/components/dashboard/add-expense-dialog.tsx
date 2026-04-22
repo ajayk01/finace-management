@@ -337,7 +337,22 @@ export function AddExpenseDialog({
     onOpenChange(false);
     // Reset form and step on close
     setTimeout(() => {
-      form.reset();
+      form.reset({
+        amount: 0,
+        charges: 0,
+        description: '',
+        accountId: '',
+        categoryId: '',
+        subCategoryId: '',
+        capId: undefined,
+        date: new Date(),
+        time: format(new Date(), 'HH:mm'),
+        includeSplitwise: false,
+        splitwiseGroupId: '',
+        splitwiseUserIds: [],
+        splitType: 'equal',
+        customAmounts: {},
+      });
       setStep(1);
       setCustomAmounts({});
     }, 200);
@@ -804,7 +819,7 @@ export function AddExpenseDialog({
                             <Calendar
                               mode="single"
                               selected={field.value}
-                              onSelect={field.onChange}
+                              onSelect={(date) => date && field.onChange(date)}
                               disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
                               }
