@@ -576,6 +576,7 @@ const updateExpenseSchema = z.object({
   categoryId: z.string(),
   subCategoryId: z.string().optional(),
   capId: z.string().optional(),
+  updateSplitwise: z.boolean().optional().default(true),
   includeSplitwise: z.boolean().optional(),
   splitwiseGroupId: z.string().optional(),
   splitwiseUserIds: z.array(z.string()).optional(),
@@ -591,7 +592,7 @@ export async function PUT(request: NextRequest) {
     try {
         const body = await request.json();
         const parsedData = updateExpenseSchema.parse(body);
-        const { id, amount, charges, date, description, account, categoryId, subCategoryId, capId, includeSplitwise, splitwiseGroupId, splitwiseUserIds, splitType, customAmounts: rawCustomAmounts } = parsedData;
+        const { id, amount, charges, date, description, account, categoryId, subCategoryId, capId, updateSplitwise, includeSplitwise, splitwiseGroupId, splitwiseUserIds, splitType, customAmounts: rawCustomAmounts } = parsedData;
 
         const epochTime = new Date(date).getTime();
         const transactionId = parseInt(id);
@@ -638,6 +639,8 @@ export async function PUT(request: NextRequest) {
         }
 
         // --- Splitwise handling ---
+        // Skip splitwise handling entirely if updateSplitwise is false
+        if (updateSplitwise !== false) {
         // Check if this transaction already has splitwise records
         const existingSplitwise = await query<{
             SPLITWISE_TRANSACTION_ID: string;
@@ -767,6 +770,7 @@ export async function PUT(request: NextRequest) {
             await Promise.all(promises);
             console.log(`✅ Created new Splitwise records for updated transaction ${transactionId}`);
         }
+        } // end updateSplitwise check
         
         // Create a separate charges transaction if charges > 0
         if (charges && charges > 0) {

@@ -142,6 +142,9 @@ export function AddExpenseDialog({
   const [creditCardCaps, setCreditCardCaps] = useState<CreditCardCap[]>([]);
   const [isCapsLoading, setIsCapsLoading] = useState(false);
 
+  // State for "Update Splitwise" checkbox in edit mode
+  const [updateSplitwiseChecked, setUpdateSplitwiseChecked] = useState(false);
+
   // Dynamically create the refined schema inside the component
   const expenseSchema = expenseSchemaBase.refine(
     (data) => {
@@ -395,6 +398,10 @@ export function AddExpenseDialog({
             id: values.accountId,
             type: selectedAccount.type,
         };
+        // Tell the API whether to update splitwise data
+        // If step === 2, user explicitly configured splitwise, so always update
+        // Otherwise, respect the checkbox state
+        payload.updateSplitwise = step === 2 ? true : updateSplitwiseChecked;
     }
     
     if (values.includeSplitwise) {
@@ -978,33 +985,60 @@ export function AddExpenseDialog({
                   />
                 )}
                 
-                {/* Show Splitwise indicator if expense has Splitwise data */}
-                {isEditMode && initialValues?.splitwiseGroupId && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-blue-600" />
-                        <span className="text-sm font-medium text-blue-900">
-                          This expense is split on Splitwise
-                        </span>
+                {/* Splitwise section in edit mode */}
+                {isEditMode && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3 space-y-2">
+                    {initialValues?.splitwiseGroupId && (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Users className="h-4 w-4 text-blue-600" />
+                          <span className="text-sm font-medium text-blue-900">
+                            This expense is split on Splitwise
+                          </span>
+                        </div>
+                        <Button 
+                          type="button" 
+                          variant="link" 
+                          size="sm"
+                          onClick={async () => {
+                            // Ensure Splitwise data is loaded before navigating
+                            if (splitwiseGroups.length === 0 && !isSplitwiseLoading) {
+                              await handleGoToSplitwise();
+                            } else {
+                              setStep(2);
+                            }
+                          }}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          View Details →
+                        </Button>
                       </div>
-                      <Button 
-                        type="button" 
-                        variant="link" 
-                        size="sm"
-                        onClick={async () => {
-                          // Ensure Splitwise data is loaded before navigating
-                          if (splitwiseGroups.length === 0 && !isSplitwiseLoading) {
-                            await handleGoToSplitwise();
-                          } else {
-                            setStep(2);
-                          }
-                        }}
-                        className="text-blue-600 hover:text-blue-800"
+                    )}
+                    <div className={cn(
+                      "flex items-center space-x-2",
+                      initialValues?.splitwiseGroupId && "pt-1 border-t border-blue-200"
+                    )}>
+                      <Checkbox
+                        id="updateSplitwise"
+                        checked={updateSplitwiseChecked}
+                        onCheckedChange={(checked) => setUpdateSplitwiseChecked(!!checked)}
+                      />
+                      <label
+                        htmlFor="updateSplitwise"
+                        className="text-sm font-medium text-blue-900 cursor-pointer select-none"
                       >
-                        View Details →
-                      </Button>
+                        {initialValues?.splitwiseGroupId
+                          ? 'Also update Splitwise data'
+                          : 'Update Splitwise data'}
+                      </label>
                     </div>
+                    {updateSplitwiseChecked && (
+                      <p className="text-xs text-blue-700">
+                        {initialValues?.splitwiseGroupId
+                          ? 'The existing Splitwise expense will be deleted and recreated with updated amounts.'
+                          : 'Splitwise data will be updated when saving this expense.'}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -1016,7 +1050,15 @@ export function AddExpenseDialog({
               <Button type="button" variant="ghost" onClick={handleClose}>Cancel</Button>
               {step === 1 && (
                 <>
-                  <Button type="submit" disabled={isLoading} onClick={() => form.setValue('includeSplitwise', false)}>
+                  <Button type="submit" disabled={isLoading} onClick={() => {
+                    // In edit mode with updateSplitwise checked, preserve includeSplitwise as true
+                    // so API will recreate splitwise data with updated amounts
+                    if (isEditMode && updateSplitwiseChecked && initialValues?.includeSplitwise) {
+                      form.setValue('includeSplitwise', true);
+                    } else {
+                      form.setValue('includeSplitwise', false);
+                    }
+                  }}>
                     {isLoading ? (isEditMode ? 'Updating...' : 'Adding...') : (isEditMode ? 'Update Expense' : 'Add Expense')}
                   </Button>
                   <Button type="button" variant="outline" onClick={handleGoToSplitwise} disabled={isSplitwiseLoading}>
