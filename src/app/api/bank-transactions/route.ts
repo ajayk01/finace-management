@@ -5,6 +5,14 @@ import { query, TransactionType } from '@/lib/db';
 import type { Transaction as DBTransaction } from '@/types/database';
 import { getFromToDates } from '@/lib/date-utils';
 
+interface SplitwiseDetail {
+  splitwiseTransactionId: string;
+  friendId: string;
+  friendName: string;
+  splitwiseFriendId: string;
+  splitAmount: number;
+}
+
 interface Transaction {
     id: string;
     date: string | null;
@@ -21,6 +29,7 @@ interface Transaction {
     investmentAccountId?: string;
     investmentAccountName?: string;
     capId?: string;
+    splitwiseDetails?: SplitwiseDetail[];
 }
 
 async function fetchBankTransactionsFromDB(
@@ -84,7 +93,8 @@ async function fetchBankTransactionsFromDB(
     console.log(`Fetched ${transactions.length} bank transactions for account ${bankAccountId}`);
 
     // Map to Transaction interface and determine type
-    return transactions.map((tx: any) => {
+    // Map to Transaction interface and determine type
+    const mappedTransactions = transactions.map((tx: any) => {
       let type: Transaction['type'] = 'Other';
       let category = '';
       let subCategory = '';
@@ -142,6 +152,52 @@ async function fetchBankTransactionsFromDB(
         capId: tx.CAP_ID?.toString() || undefined,
       };
     });
+
+    // Fetch splitwise details for all transactions in bulk
+    const transactionIds = mappedTransactions.map((tx: Transaction) => tx.id);
+    if (transactionIds.length > 0) {
+      const placeholders = transactionIds.map(() => '?').join(',');
+      const splitwiseRows = await query<{
+        TRANSACTION_ID: number;
+        SPLITWISE_TRANSACTION_ID: string;
+        FRIEND_ID: number;
+        FRIEND_NAME: string;
+        SPLITWISE_FRIEND_ID: number;
+        SPLITED_AMOUNT: number;
+      }>(
+        `SELECT st.TRANSACTION_ID, st.SPLITWISE_TRANSACTION_ID, st.FRIEND_ID, sf.NAME AS FRIEND_NAME, sf.SPLITWISE_FRIEND_ID, st.SPLITED_AMOUNT
+         FROM SplitwiseTransactions st
+         INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
+         WHERE st.TRANSACTION_ID IN (${placeholders})`,
+        transactionIds.map(Number)
+      );
+
+      // Group splitwise rows by transaction ID
+      const splitwiseMap = new Map<string, SplitwiseDetail[]>();
+      for (const row of splitwiseRows) {
+        const txId = row.TRANSACTION_ID.toString();
+        if (!splitwiseMap.has(txId)) {
+          splitwiseMap.set(txId, []);
+        }
+        splitwiseMap.get(txId)!.push({
+          splitwiseTransactionId: row.SPLITWISE_TRANSACTION_ID,
+          friendId: row.FRIEND_ID.toString(),
+          friendName: row.FRIEND_NAME,
+          splitwiseFriendId: row.SPLITWISE_FRIEND_ID.toString(),
+          splitAmount: Number(row.SPLITED_AMOUNT),
+        });
+      }
+
+      // Attach splitwise details to transactions
+      for (const tx of mappedTransactions) {
+        const details = splitwiseMap.get(tx.id);
+        if (details && details.length > 0) {
+          tx.splitwiseDetails = details;
+        }
+      }
+    }
+
+    return mappedTransactions;
   } catch (error) {
     console.error("Error fetching bank transactions from database:", error);
     throw new Error("Failed to fetch bank transactions from database.");

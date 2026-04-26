@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, Loader2, Edit2, Copy, Trash2, Eye } from "lucide-react";
+import { AlertCircle, Loader2, Edit2, Copy, Trash2, Eye, Users } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -286,10 +286,24 @@ export function TransactionDialog({
                           <>
                             <TableCell className="font-medium">{tx.category}</TableCell>
                             <TableCell className="font-medium">{tx.subCategory || '-'}</TableCell>
-                            <TableCell className="font-medium">{tx.description}</TableCell>
+                            <TableCell className="font-medium">
+                              <span className="flex items-center gap-1.5">
+                                {tx.description}
+                                {tx.splitwiseDetails && tx.splitwiseDetails.length > 0 && (
+                                  <span title="Splitwise split"><Users className="h-3.5 w-3.5 text-orange-500 shrink-0" /></span>
+                                )}
+                              </span>
+                            </TableCell>
                           </>
                         ) : (
-                          <TableCell className="font-medium">{tx.description}</TableCell>
+                          <TableCell className="font-medium">
+                            <span className="flex items-center gap-1.5">
+                              {tx.description}
+                              {tx.splitwiseDetails && tx.splitwiseDetails.length > 0 && (
+                                <span title="Splitwise split"><Users className="h-3.5 w-3.5 text-orange-500 shrink-0" /></span>
+                              )}
+                            </span>
+                          </TableCell>
                         )}
                         <TableCell
                           className={cn("text-right font-semibold whitespace-nowrap", {
