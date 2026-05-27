@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from "@/components/ui/button";
-import { LogOut, User, PlusCircle, ChevronDown } from "lucide-react";
+import { PlusCircle, ChevronDown, Bell } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,10 +54,6 @@ import type { SplitwiseGroup } from './add-expense-dialog';
 import type { InvestmentCategory } from './add-investment-dialog';
 import type { Transaction } from '@/app/page';
 
-interface User {
-  username: string;
-}
-
 interface DashboardHeaderProps {
   expenseCategories: Category[];
   expenseSubCategories: SubCategory[];
@@ -91,7 +87,6 @@ export function DashboardHeader({
 }: DashboardHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const [user, setUser] = useState<User | null>(null);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
   const [isAddInvestmentOpen, setIsAddInvestmentOpen] = useState(false);
@@ -102,22 +97,12 @@ export function DashboardHeader({
   const [isUnauditedExpenseOpen, setIsUnauditedExpenseOpen] = useState(false);
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [isAddSubCategoryOpen, setIsAddSubCategoryOpen] = useState(false);
+  const [isSendNotificationOpen, setIsSendNotificationOpen] = useState(false);
 
   const [selectedCreditCardForCap, setSelectedCreditCardForCap] = useState<string>('');
   const [splitwiseGroups, setSplitwiseGroups] = useState<SplitwiseGroup[]>([]);
 
   useEffect(() => {
-    async function fetchUser() {
-      try {
-        const res = await fetch('/api/auth/user');
-        const data = await res.json();
-        if (data.isLoggedIn) {
-          setUser({ username: data.username });
-        }
-      } catch (error) {
-        console.error("Failed to fetch user", error);
-      }
-    }
     async function fetchSplitwiseGroups() {
         try {
             const res = await fetch('/api/splitwise');
@@ -131,27 +116,8 @@ export function DashboardHeader({
             console.error("Failed to fetch splitwise groups", error);
         }
     }
-    fetchUser();
     fetchSplitwiseGroups();
   }, [toast]);
-  
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-      toast({
-        title: "Logged Out",
-        description: "You have been successfully logged out.",
-      });
-      router.push('/login');
-      router.refresh();
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Logout Failed",
-        description: "An error occurred during logout. Please try again.",
-      });
-    }
-  };
 
   const combinedAccounts = [
     ...bankAccounts.map(acc => ({ ...acc, type: "Bank" as const })),
@@ -196,25 +162,11 @@ export function DashboardHeader({
                   <DropdownMenuItem onClick={() => setIsUnauditedExpenseOpen(true)}>Unaudited Expense</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsPayCCBillOpen(true)}>Pay CC bill</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => router.push('/mf-investments')}>Check MF Investment</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setIsSendNotificationOpen(true)}>
+                      <Bell className="mr-2 h-4 w-4" /> Send Notification
+                    </DropdownMenuItem>
                 </DropdownMenuContent>
-            </DropdownMenu>
-
-
-            <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full">
-                <User className="h-5 w-5" />
-                <span className="sr-only">User menu</span>
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-                <DropdownMenuLabel>{user ? user.username : 'My Account'}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Log out</span>
-                </DropdownMenuItem>
-            </DropdownMenuContent>
             </DropdownMenu>
         </div>
       </header>
@@ -293,6 +245,10 @@ export function DashboardHeader({
         open={isAddCapOpen}
         onOpenChange={setIsAddCapOpen}
         creditCards={creditCards}
+      />
+      <SendNotificationDialog
+        open={isSendNotificationOpen}
+        onOpenChange={setIsSendNotificationOpen}
       />
     </>
   );
@@ -465,6 +421,198 @@ function AddCapHeaderDialog({
               </Button>
               <Button type="submit" disabled={isLoading}>
                 {isLoading ? 'Adding...' : 'Add Cap'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Send Notification Dialog
+function SendNotificationDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
+  const [devices, setDevices] = useState<{ ID: number; DEVICE_NAME: string }[]>([]);
+  const [tokenMode, setTokenMode] = useState<'device' | 'manual'>('device');
+
+  useEffect(() => {
+    if (open) {
+      fetch('/api/fcm-tokens')
+        .then(res => res.json())
+        .then(data => setDevices(data.devices || []))
+        .catch(() => setDevices([]));
+    }
+  }, [open]);
+
+  const notificationSchema = z.object({
+    deviceId: z.string().optional(),
+    token: z.string().optional(),
+    title: z.string().optional(),
+    body: z.string().optional(),
+  }).refine(
+    (data) => (tokenMode === 'device' ? !!data.deviceId : !!data.token),
+    { message: tokenMode === 'device' ? 'Please select a device.' : 'FCM token is required.', path: [tokenMode === 'device' ? 'deviceId' : 'token'] }
+  );
+
+  const form = useForm<z.infer<typeof notificationSchema>>({
+    resolver: zodResolver(notificationSchema),
+    defaultValues: {
+      deviceId: '',
+      token: '',
+      title: '',
+      body: '',
+    },
+  });
+
+  const handleSubmit = async (values: z.infer<typeof notificationSchema>) => {
+    setIsLoading(true);
+    try {
+      const payload: Record<string, string | undefined> = {
+        title: values.title || undefined,
+        body: values.body || undefined,
+      };
+
+      if (tokenMode === 'device') {
+        payload.deviceId = values.deviceId;
+      } else {
+        payload.token = values.token;
+      }
+
+      const response = await fetch('/api/send-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send notification');
+      }
+
+      toast({
+        title: 'Notification Sent',
+        description: `Message ID: ${data.messageId}`,
+      });
+
+      form.reset();
+      onOpenChange(false);
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to send notification.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleClose = () => {
+    onOpenChange(false);
+    form.reset();
+    setTokenMode('device');
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Send Push Notification</DialogTitle>
+          <DialogDescription>
+            Send a remote notification to an Android device via FCM.
+          </DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <div className="flex gap-2 mb-2">
+              <Button type="button" size="sm" variant={tokenMode === 'device' ? 'default' : 'outline'} onClick={() => setTokenMode('device')}>
+                Saved Device
+              </Button>
+              <Button type="button" size="sm" variant={tokenMode === 'manual' ? 'default' : 'outline'} onClick={() => setTokenMode('manual')}>
+                Manual Token
+              </Button>
+            </div>
+
+            {tokenMode === 'device' ? (
+              <FormField
+                control={form.control}
+                name="deviceId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Device</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={devices.length ? 'Select a device' : 'No devices registered'} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {devices.map(d => (
+                          <SelectItem key={d.ID} value={String(d.ID)}>{d.DEVICE_NAME}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : (
+              <FormField
+                control={form.control}
+                name="token"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>FCM Device Token</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Paste device FCM token" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+            <FormField
+              control={form.control}
+              name="title"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Title (optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Notification title" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="body"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Message (optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Notification message" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={handleClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Sending...' : 'Send Notification'}
               </Button>
             </DialogFooter>
           </form>

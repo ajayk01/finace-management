@@ -48,6 +48,7 @@
     "dotenv": "^16.5.0",
     "firebase": "^11.8.1",
     "genkit": "^1.8.0",
+    "google-auth-library": "^10.6.2",
     "iron-session": "^8.0.2",
     "lucide-react": "^0.475.0",
     "mysql2": "^3.11.0",
