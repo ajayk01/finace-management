@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { getIronSession } from 'iron-session';
 import { sessionOptions, type SessionData } from '@/lib/session';
 
-const publicPaths = ['/api/login', '/api/fcm-tokens', '/login'];
+const publicPaths = ['/api/login', '/api/fcm-tokens', '/api/zoho-webhook', '/login'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
