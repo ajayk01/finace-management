@@ -229,8 +229,8 @@ export async function GET(request: NextRequest) {
           aFrom.ACCOUNT_NAME AS FROM_ACCOUNT_NAME,
           aTo.ACCOUNT_NAME AS TO_ACCOUNT_NAME
         FROM Transactions t
-        LEFT JOIN Categories c ON t.CATEGORY_ID = c.ID
-        LEFT JOIN SubCategories sc ON t.SUB_CATEGORY_ID = sc.ID
+        LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
+        LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
         LEFT JOIN Accounts aFrom ON t.FROM_ACCOUNT_ID = aFrom.ID
         LEFT JOIN Accounts aTo ON t.TO_ACCOUNT_ID = aTo.ID
         WHERE t.ID = ?
