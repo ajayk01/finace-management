@@ -457,6 +457,13 @@ function SendNotificationDialog({
     token: z.string().optional(),
     title: z.string().optional(),
     body: z.string().optional(),
+    jsonData: z.string().optional().refine(
+      (val) => {
+        if (!val) return true;
+        try { JSON.parse(val); return true; } catch { return false; }
+      },
+      { message: 'Must be valid JSON' }
+    ),
   }).refine(
     (data) => (tokenMode === 'device' ? !!data.deviceId : !!data.token),
     { message: tokenMode === 'device' ? 'Please select a device.' : 'FCM token is required.', path: [tokenMode === 'device' ? 'deviceId' : 'token'] }
@@ -469,15 +476,17 @@ function SendNotificationDialog({
       token: '',
       title: '',
       body: '',
+      jsonData: '',
     },
   });
 
   const handleSubmit = async (values: z.infer<typeof notificationSchema>) => {
     setIsLoading(true);
     try {
-      const payload: Record<string, string | undefined> = {
+      const payload: Record<string, any> = {
         title: values.title || undefined,
         body: values.body || undefined,
+        data: values.jsonData ? JSON.parse(values.jsonData) : undefined,
       };
 
       if (tokenMode === 'device') {
@@ -602,6 +611,23 @@ function SendNotificationDialog({
                   <FormLabel>Message (optional)</FormLabel>
                   <FormControl>
                     <Input placeholder="Notification message" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="jsonData"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Data Payload (optional, hidden from notification)</FormLabel>
+                  <FormControl>
+                    <textarea
+                      className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      placeholder='{"key": "value"}'
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

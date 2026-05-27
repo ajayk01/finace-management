@@ -214,8 +214,60 @@ async function fetchAllTransactionsFromDB({
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
     const month = searchParams.get("month");
     const year = searchParams.get("year");
+
+    // Fetch single transaction by ID
+    if (id) {
+      const rows = await query(`
+        SELECT 
+          t.ID, t.DATE, t.AMOUNT, t.NOTES, t.TRANSCATION_TYPE,
+          c.CATEGORY_NAME, sc.SUB_CATEGORY_NAME,
+          t.CATEGORY_ID, t.SUB_CATEGORY_ID,
+          t.FROM_ACCOUNT_ID, t.TO_ACCOUNT_ID,
+          aFrom.ACCOUNT_NAME AS FROM_ACCOUNT_NAME,
+          aTo.ACCOUNT_NAME AS TO_ACCOUNT_NAME
+        FROM Transactions t
+        LEFT JOIN Categories c ON t.CATEGORY_ID = c.ID
+        LEFT JOIN SubCategories sc ON t.SUB_CATEGORY_ID = sc.ID
+        LEFT JOIN Accounts aFrom ON t.FROM_ACCOUNT_ID = aFrom.ID
+        LEFT JOIN Accounts aTo ON t.TO_ACCOUNT_ID = aTo.ID
+        WHERE t.ID = ?
+      `, [id]);
+
+      if (rows.length === 0) {
+        return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
+      }
+
+      const row = rows[0];
+      const txDate = row.DATE ? new Date(Number(row.DATE)) : null;
+      const typeMap: Record<number, string> = {
+        [TransactionType.INCOME]: 'Income',
+        [TransactionType.EXPENSE]: 'Expense',
+        [TransactionType.TRANSFER]: 'Transfer',
+        [TransactionType.INVESTMENT]: 'Investment',
+        [TransactionType.INVEST_WITHDRAW]: 'Investment',
+        [TransactionType.SPLITWISE_SETTLEMENT]: 'Splitwise Settlement',
+      };
+
+      return NextResponse.json({
+        transaction: {
+          id: String(row.ID),
+          date: txDate ? txDate.toISOString().split('T')[0] : null,
+          time: txDate ? txDate.toTimeString().slice(0, 5) : null,
+          description: row.NOTES || '',
+          amount: Number(row.AMOUNT),
+          type: typeMap[row.TRANSCATION_TYPE] || 'Unknown',
+          category: row.CATEGORY_NAME || undefined,
+          subCategory: row.SUB_CATEGORY_NAME || undefined,
+          categoryId: row.CATEGORY_ID ? String(row.CATEGORY_ID) : undefined,
+          subCategoryId: row.SUB_CATEGORY_ID ? String(row.SUB_CATEGORY_ID) : undefined,
+          accountId: row.FROM_ACCOUNT_ID ? String(row.FROM_ACCOUNT_ID) : undefined,
+          accountName: row.FROM_ACCOUNT_NAME || undefined,
+        },
+      });
+    }
 
     if (!month || !year) {
       return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
