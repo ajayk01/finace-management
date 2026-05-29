@@ -130,3 +130,29 @@ export enum CategoryType {
   INCOME = 2,
   EXPENSE = 1,
 }
+
+/**
+ * Insert an expense transaction into the Transactions table.
+ * Returns the inserted transaction ID.
+ */
+export async function insertExpenseTransaction({
+  accountId,
+  amount,
+  description,
+}: {
+  accountId: number;
+  amount: number;
+  description?: string;
+}): Promise<number> {
+  const epochTime = new Date().getTime();
+
+  const result: any = await query(
+    `INSERT INTO Transactions (DATE, NOTES, AMOUNT, FROM_ACCOUNT_ID, CATEGORY_ID, SUB_CATEGORY_ID, TRANSCATION_TYPE)
+     VALUES (?, ?, ?, ?, NULL, NULL, ?)`,
+    [epochTime, description || '', amount, accountId, TransactionType.EXPENSE]
+  );
+
+  const insertedId = result?.insertId || 0;
+  console.log(`✅ insertExpenseTransaction: ID=${insertedId}, amount=${amount}, account=${accountId}`);
+  return insertedId;
+}
