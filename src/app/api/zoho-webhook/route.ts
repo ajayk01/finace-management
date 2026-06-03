@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server';
 import { insertExpenseTransaction } from '@/lib/db';
 import { sendToAllDevices } from '@/lib/fcm';
 
-interface ParsedTransaction {
+interface ParsedTransaction 
+{
   amount: number;
   accountLast4: string;
   description: string;
@@ -13,9 +14,14 @@ interface ParsedTransaction {
  * Map account last 4 digits to account ID and name.
  * A single fromAddress can have multiple accounts (e.g. multiple CCs from same bank).
  */
-const ACCOUNT_MAP: Record<string, { id: number; name: string }> = {
+const ACCOUNT_MAP: Record<string, { id: number; name: string }> = 
+{
   '9003': { id: 9, name: 'ICICI Coral CC' },
+  '1004': { id: 7, name: 'Amazon Pay ICICI CC' },
   '8789': { id: 3, name: 'HDFC Bank' },
+  '2138': { id: 20, name: 'HDFC Diners Black' },
+  '9615': { id: 18, name: 'Airtel Axis CC' },
+  '1238': { id: 22, name: 'SBI Pulse CC' },
 };
 
 // ---------------------------------------------------------------------------
@@ -43,11 +49,64 @@ const parseICICI: TransactionParser = (text) => {
 };
 
 /**
- * HDFC Bank — debit / UPI alerts.
- * Pattern: "Rs.1304.05 is debited from your account ending 8789 towards VPA paytm-… (WEB UPI) on 28-05-26"
+ * HDFC Bank — credit card alerts.
+ * "Rs. 5999.00 has been debited from your HDFC Bank Credit Card ending 2138 towards PETER ENGLAND on 23 May, 2026"
  */
-const parseHDFC: TransactionParser = (text) => {
-  const pattern = /Rs\.?([\d,]+(?:\.\d{2})?)\s+is debited from your account ending\s+(\d{4})\s+towards\s+(.+?)\s+on\s+/i;
+const parseHDFCCreditCard: TransactionParser = (text) => {
+  const pattern = /Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+has been debited from (?:your )?HDFC Bank Credit Card ending\s+(\d{4})\s+towards\s+(.+?)\s+on\s+/i;
+  const m = text.match(pattern);
+  if (!m) return null;
+  return {
+    amount: parseFloat(m[1].replace(/,/g, '')),
+    accountLast4: m[2],
+    description: m[3]?.trim() || '',
+  };
+};
+
+/**
+ * HDFC Bank — bank account debit / UPI alerts.
+ * Pattern 1: "Rs.1304.05 is debited from your account ending 8789 towards VPA paytm-… on 28-05-26"
+ * Pattern 2: "Rs.9048.00 has been debited from account 8789 to VPA cred.club@axisb CRED Club on 02-02-26"
+ */
+const parseHDFCBank: TransactionParser = (text) => {
+  const pattern = /Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+(?:is|has been) debited from (?:your )?account(?: ending)?\s+(\d{4})\s+(?:towards|to)\s+(.+?)\s+on\s+/i;
+  const m = text.match(pattern);
+  if (!m) return null;
+  return {
+    amount: parseFloat(m[1].replace(/,/g, '')),
+    accountLast4: m[2],
+    description: m[3]?.trim() || '',
+  };
+};
+
+/**
+ * Axis Bank — credit card alerts (structured HTML format).
+ * Extracts from subject pattern: "INR 6000 spent on credit card no. XX9615"
+ * and HTML fields: "Transaction Amount:", "Merchant Name:", "Credit Card No."
+ */
+const parseAxisBank: TransactionParser = (text) => {
+  // Try subject/summary pattern first: "INR 6000 spent on credit card no. XX9615"
+  const subjectPattern = /INR\s*([\d,]+(?:\.\d{2})?)\s+spent on credit card no\.\s*XX(\d{4})/i;
+  const subjectMatch = text.match(subjectPattern);
+  if (!subjectMatch) return null;
+
+  const amount = parseFloat(subjectMatch[1].replace(/,/g, ''));
+  const accountLast4 = subjectMatch[2];
+
+  // Try to extract merchant name from HTML structure
+  const merchantPattern = /Merchant Name:\s*<\/div>\s*<div[^>]*>\s*(.+?)\s*(?:<br|<\/div)/i;
+  const merchantMatch = text.match(merchantPattern);
+  const description = merchantMatch?.[1]?.trim() || '';
+
+  return { amount, accountLast4, description };
+};
+
+/**
+ * SBI Card — credit card transaction alerts.
+ * "Rs.101.00 spent on your SBI Credit Card ending 1238 at IILIndianRailwaysUT on 22/04/26."
+ */
+const parseSBICard: TransactionParser = (text) => {
+  const pattern = /Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+spent on your SBI Credit Card ending\s+(\d{4})\s+at\s+(.+?)\s+on\s+/i;
   const m = text.match(pattern);
   if (!m) return null;
   return {
@@ -64,7 +123,9 @@ const parseHDFC: TransactionParser = (text) => {
  */
 const SENDER_PARSERS: { match: string; parsers: TransactionParser[] }[] = [
   { match: 'icicibank', parsers: [parseICICI] },
-  { match: 'hdfcbank',  parsers: [parseHDFC] },
+  { match: 'hdfcbank',  parsers: [parseHDFCCreditCard, parseHDFCBank] },
+  { match: 'axis',      parsers: [parseAxisBank] },
+  { match: 'sbicard',   parsers: [parseSBICard] },
 ];
 
 /**
@@ -109,7 +170,7 @@ export async function POST(request: NextRequest) {
     console.log('📧 Zoho Webhook received:', JSON.stringify(payload, null, 2));
 
     const fromAddress: string = payload?.fromAddress || payload?.from || '';
-    const text: string = payload?.summary || payload?.html || '';
+    const text: string = [payload?.summary, payload?.html].filter(Boolean).join('\n');
 
     if (!text) {
       return NextResponse.json({ success: true, message: 'Webhook received, no content to parse' });
@@ -173,6 +234,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET() 
+{
   return NextResponse.json({ status: 'Zoho webhook is active' });
 }
