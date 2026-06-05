@@ -170,7 +170,9 @@ export async function POST(request: NextRequest) {
     console.log('📧 Zoho Webhook received:', JSON.stringify(payload, null, 2));
 
     const fromAddress: string = payload?.fromAddress || payload?.from || '';
-    const text: string = [payload?.summary, payload?.html].filter(Boolean).join('\n');
+    const rawText: string = [payload?.summary, payload?.html].filter(Boolean).join('\n');
+    // Strip HTML tags so regex parsers can match plain text values
+    const text: string = rawText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
 
     if (!text) {
       return NextResponse.json({ success: true, message: 'Webhook received, no content to parse' });
