@@ -22,6 +22,7 @@ const ACCOUNT_MAP: Record<string, { id: number; name: string }> =
   '2138': { id: 20, name: 'HDFC Diners Black' },
   '9615': { id: 18, name: 'Airtel Axis CC' },
   '1238': { id: 22, name: 'SBI Pulse CC' },
+  '4674': { id: 23, name: 'HDFC PhonePe Ultimo' },
 };
 
 // ---------------------------------------------------------------------------
@@ -60,6 +61,26 @@ const parseHDFCCreditCard: TransactionParser = (text) => {
     amount: parseFloat(m[1].replace(/,/g, '')),
     accountLast4: m[2],
     description: m[3]?.trim() || '',
+  };
+};
+
+/**
+ * HDFC Bank - RuPay Credit Card UPI debit alerts.
+ * "Rs.30.00 has been debited from your RuPay Credit Card (ending 4674) Paid to paytm... Date: 20-07-26 UPI Transaction Reference Number: 1266..."
+ */
+const parseHDFCRuPayUPI: TransactionParser = (text) => {
+  const pattern = /Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+has been debited from your RuPay Credit Card\s*\(ending\s*(\d{4})\)\s*Paid to\s+(.+?)\s+Date\s*:/i;
+  const m = text.match(pattern);
+  if (!m) return null;
+
+  const upiRefMatch = text.match(/UPI Transaction Reference Number\s*:?\s*(\d{6,})/i);
+  const merchant = m[3]?.trim() || '';
+  const upiRef = upiRefMatch?.[1] || '';
+
+  return {
+    amount: parseFloat(m[1].replace(/,/g, '')),
+    accountLast4: m[2],
+    description: upiRef ? `${merchant} | UPI Ref: ${upiRef}` : merchant,
   };
 };
 
@@ -123,7 +144,7 @@ const parseSBICard: TransactionParser = (text) => {
  */
 const SENDER_PARSERS: { match: string; parsers: TransactionParser[] }[] = [
   { match: 'icicibank', parsers: [parseICICI] },
-  { match: 'hdfcbank',  parsers: [parseHDFCCreditCard, parseHDFCBank] },
+  { match: 'hdfcbank',  parsers: [parseHDFCCreditCard, parseHDFCRuPayUPI, parseHDFCBank] },
   { match: 'axis',      parsers: [parseAxisBank] },
   { match: 'sbicard',   parsers: [parseSBICard] },
 ];
