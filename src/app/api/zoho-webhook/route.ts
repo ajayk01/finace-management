@@ -34,6 +34,42 @@ const ACCOUNT_MAP: Record<string, { id: number; name: string }> =
 
 type TransactionParser = (text: string) => ParsedTransaction | null;
 
+function stripHtml(input: string): string {
+  return (input || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanDescription(input: string): string {
+  return (input || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*(?:Date\s*:|UPI Transaction Reference Number\s*:|If not done by you|Warm Regards|Thanks and Regards).*$/i, '')
+    .replace(/[|,;:\-\s]+$/g, '')
+    .trim();
+}
+
+function parseTransactionFromSources(fromAddress: string, candidates: string[]): ParsedTransaction | null {
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const parsed = parseTransaction(fromAddress, candidate);
+    if (parsed) {
+      return {
+        ...parsed,
+        description: cleanDescription(parsed.description),
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * ICICI Bank — credit card transaction alerts.
  * Pattern: "Credit Card XX9003 has been used for a transaction of INR 30.00 on … Info: UPI-…"
@@ -80,7 +116,7 @@ const parseHDFCRuPayUPI: TransactionParser = (text) => {
   return {
     amount: parseFloat(m[1].replace(/,/g, '')),
     accountLast4: m[2],
-    description: upiRef ? `${merchant} | UPI Ref: ${upiRef}` : merchant,
+    description: upiRef ? `${cleanDescription(merchant)} | UPI Ref: ${upiRef}` : cleanDescription(merchant),
   };
 };
 
@@ -191,15 +227,16 @@ export async function POST(request: NextRequest) {
     console.log('📧 Zoho Webhook received:', JSON.stringify(payload, null, 2));
 
     const fromAddress: string = payload?.fromAddress || payload?.from || '';
-    const rawText: string = [payload?.summary, payload?.html].filter(Boolean).join('\n');
-    // Strip HTML tags so regex parsers can match plain text values
-    const text: string = rawText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    const summaryText: string = stripHtml(String(payload?.summary || ''));
+    const htmlText: string = stripHtml(String(payload?.html || ''));
+    const text: string = summaryText || htmlText;
 
     if (!text) {
       return NextResponse.json({ success: true, message: 'Webhook received, no content to parse' });
     }
 
-    const parsed = parseTransaction(fromAddress, text);
+    // Prefer summary parsing to avoid full-mail HTML noise in description.
+    const parsed = parseTransactionFromSources(fromAddress, [summaryText, htmlText]);
     if (!parsed) {
       console.log('⚠️ Could not parse transaction from email');
       return NextResponse.json({ success: true, message: 'Webhook received, could not parse transaction' });
