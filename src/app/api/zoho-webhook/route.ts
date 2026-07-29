@@ -146,10 +146,24 @@ const parseAxisBank: TransactionParser = (text) => {
   // Axis emails can include whole numbers, 1 decimal, or 2 decimals.
   const subjectPattern = /INR\s*([\d,]+(?:\.\d{1,2})?)\s+spent on credit card no\.\s*XX(\d{4})/i;
   const subjectMatch = text.match(subjectPattern);
-  if (!subjectMatch) return null;
 
-  const amount = parseFloat(subjectMatch[1].replace(/,/g, ''));
-  const accountLast4 = subjectMatch[2];
+  let amount: number | null = null;
+  let accountLast4 = '';
+
+  if (subjectMatch) {
+    amount = parseFloat(subjectMatch[1].replace(/,/g, ''));
+    accountLast4 = subjectMatch[2];
+  } else {
+    // Fallback for forwarded mails where subject may be absent in parsed text:
+    // parse body labels like "Transaction Amount: INR 255.4" and "... No. XX9615".
+    const amountMatch = text.match(/Transaction Amount:\s*(?:INR\s*)?([\d,]+(?:\.\d{1,2})?)/i);
+    const cardMatch = text.match(/(?:Credit Card No\.?|Axis Bank Credit Card No\.?)\s*XX(\d{4})/i);
+
+    if (!amountMatch || !cardMatch) return null;
+
+    amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+    accountLast4 = cardMatch[1];
+  }
 
   // Extract merchant from either stripped text or raw HTML snippets.
   const merchantPatterns = [
@@ -238,17 +252,18 @@ export async function POST(request: NextRequest) {
     console.log('📧 Zoho Webhook received:', JSON.stringify(payload, null, 2));
 
     const fromAddress: string = payload?.fromAddress || payload?.from || '';
+    const subjectText: string = stripHtml(String(payload?.subject || ''));
     const summaryText: string = stripHtml(String(payload?.summary || ''));
     const rawHtmlText: string = String(payload?.html || '');
     const htmlText: string = stripHtml(rawHtmlText);
-    const text: string = summaryText || htmlText;
+    const text: string = subjectText || summaryText || htmlText;
 
     if (!text) {
       return NextResponse.json({ success: true, message: 'Webhook received, no content to parse' });
     }
 
-    // Prefer summary parsing to avoid full-mail HTML noise in description.
-    const parsed = parseTransactionFromSources(fromAddress, [summaryText, htmlText, rawHtmlText]);
+    // Prefer subject/summary first, then stripped HTML, then raw HTML fallback.
+    const parsed = parseTransactionFromSources(fromAddress, [subjectText, summaryText, htmlText, rawHtmlText]);
     if (!parsed) {
       console.log('⚠️ Could not parse transaction from email');
       return NextResponse.json({ success: true, message: 'Webhook received, could not parse transaction' });
