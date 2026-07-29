@@ -143,17 +143,28 @@ const parseHDFCBank: TransactionParser = (text) => {
  */
 const parseAxisBank: TransactionParser = (text) => {
   // Try subject/summary pattern first: "INR 6000 spent on credit card no. XX9615"
-  const subjectPattern = /INR\s*([\d,]+(?:\.\d{2})?)\s+spent on credit card no\.\s*XX(\d{4})/i;
+  // Axis emails can include whole numbers, 1 decimal, or 2 decimals.
+  const subjectPattern = /INR\s*([\d,]+(?:\.\d{1,2})?)\s+spent on credit card no\.\s*XX(\d{4})/i;
   const subjectMatch = text.match(subjectPattern);
   if (!subjectMatch) return null;
 
   const amount = parseFloat(subjectMatch[1].replace(/,/g, ''));
   const accountLast4 = subjectMatch[2];
 
-  // Try to extract merchant name from HTML structure
-  const merchantPattern = /Merchant Name:\s*<\/div>\s*<div[^>]*>\s*(.+?)\s*(?:<br|<\/div)/i;
-  const merchantMatch = text.match(merchantPattern);
-  const description = merchantMatch?.[1]?.trim() || '';
+  // Extract merchant from either stripped text or raw HTML snippets.
+  const merchantPatterns = [
+    /Merchant Name:\s*([A-Z0-9 .,&\-_/]{2,80}?)(?:\s+Axis Bank Credit Card No\.|\s+Date\s*&\s*Time:|\s+Available Limit\*?:|\s+Total Credit Limit\*?:|$)/i,
+    /Merchant Name:\s*<\/div>\s*<div[^>]*>\s*(.+?)\s*(?:<br|<\/div)/i,
+  ];
+
+  let description = '';
+  for (const pattern of merchantPatterns) {
+    const merchantMatch = text.match(pattern);
+    if (merchantMatch?.[1]) {
+      description = merchantMatch[1].replace(/\s+/g, ' ').trim();
+      break;
+    }
+  }
 
   return { amount, accountLast4, description };
 };
@@ -228,7 +239,8 @@ export async function POST(request: NextRequest) {
 
     const fromAddress: string = payload?.fromAddress || payload?.from || '';
     const summaryText: string = stripHtml(String(payload?.summary || ''));
-    const htmlText: string = stripHtml(String(payload?.html || ''));
+    const rawHtmlText: string = String(payload?.html || '');
+    const htmlText: string = stripHtml(rawHtmlText);
     const text: string = summaryText || htmlText;
 
     if (!text) {
@@ -236,7 +248,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Prefer summary parsing to avoid full-mail HTML noise in description.
-    const parsed = parseTransactionFromSources(fromAddress, [summaryText, htmlText]);
+    const parsed = parseTransactionFromSources(fromAddress, [summaryText, htmlText, rawHtmlText]);
     if (!parsed) {
       console.log('⚠️ Could not parse transaction from email');
       return NextResponse.json({ success: true, message: 'Webhook received, could not parse transaction' });
