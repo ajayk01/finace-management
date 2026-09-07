@@ -11,6 +11,7 @@ interface SplitwiseDetail {
   friendName: string;
   splitwiseFriendId: string;
   splitAmount: number;
+  isSettled: boolean;
 }
 
 interface Transaction {
@@ -164,8 +165,9 @@ async function fetchBankTransactionsFromDB(
         FRIEND_NAME: string;
         SPLITWISE_FRIEND_ID: number;
         SPLITED_AMOUNT: number;
+        IS_SETTLED: boolean | number;
       }>(
-        `SELECT st.TRANSACTION_ID, st.SPLITWISE_TRANSACTION_ID, st.FRIEND_ID, sf.NAME AS FRIEND_NAME, sf.SPLITWISE_FRIEND_ID, st.SPLITED_AMOUNT
+        `SELECT st.TRANSACTION_ID, st.SPLITWISE_TRANSACTION_ID, st.FRIEND_ID, sf.NAME AS FRIEND_NAME, sf.SPLITWISE_FRIEND_ID, st.SPLITED_AMOUNT, st.IS_SETTLED
          FROM SplitwiseTransactions st
          INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
          WHERE st.TRANSACTION_ID IN (${placeholders})`,
@@ -185,6 +187,7 @@ async function fetchBankTransactionsFromDB(
           friendName: row.FRIEND_NAME,
           splitwiseFriendId: row.SPLITWISE_FRIEND_ID.toString(),
           splitAmount: Number(row.SPLITED_AMOUNT),
+          isSettled: Boolean(row.IS_SETTLED),
         });
       }
 

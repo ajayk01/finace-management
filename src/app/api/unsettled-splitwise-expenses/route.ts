@@ -2,17 +2,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-
-const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
+import { getSplitwiseCookie, missingSplitwiseCookieResponse, splitwiseCookieHeaders } from '@/lib/splitwise-auth';
 
 // Helper function to make authenticated requests to Splitwise
-async function fetchSplitwise(endpoint: string) {
+async function fetchSplitwise(endpoint: string, cookie: string) {
   const url = `https://secure.splitwise.com/api/v3.0/${endpoint}`;
   const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${SPLITWISE_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
+    headers: splitwiseCookieHeaders(cookie, 'application/json'),
     cache: 'no-store'
   });
 
@@ -26,6 +22,11 @@ async function fetchSplitwise(endpoint: string) {
 }
 
 export async function GET(request: NextRequest) {
+  const cookie = getSplitwiseCookie(request);
+  if (!cookie) {
+    return missingSplitwiseCookieResponse();
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const friendId = searchParams.get('friendId');
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Friend ID is required' }, { status: 400 });
     }
 
-    // Fetch all unsettled transactions (where TRANSACTION_ID is NULL) for this friend
+    // Fetch all outstanding imported Splitwise transactions for this friend.
     const fetchUnsettledSql = `
       SELECT 
         st.SPLITWISE_TRANSACTION_ID,
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
         sf.SPLITWISE_FRIEND_ID
       FROM SplitwiseTransactions st
       INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
-      WHERE st.FRIEND_ID = ? AND st.TRANSACTION_ID IS NULL
+      WHERE st.FRIEND_ID = ? AND st.TRANSACTION_ID IS NULL AND st.IS_SETTLED = 0
       ORDER BY st.SPLITWISE_TRANSACTION_ID DESC
     `;
 
@@ -71,7 +72,7 @@ export async function GET(request: NextRequest) {
 
     for (const tx of unsettledTransactions) {
       try {
-        const expenseData = await fetchSplitwise(`get_expense/${tx.SPLITWISE_TRANSACTION_ID}`);
+        const expenseData = await fetchSplitwise(`get_expense/${tx.SPLITWISE_TRANSACTION_ID}`, cookie);
         const expense = expenseData.expense;
 
         // Format date

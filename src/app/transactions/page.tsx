@@ -113,11 +113,7 @@ export default function TransactionsPage() {
   // Filter state
   const [typeFilter, setTypeFilter] = useState<'All' | 'Income' | 'Expense' | 'Investment' | 'Transfer' | 'Splitwise Settlement'>('All');
   const [accountFilter, setAccountFilter] = useState<string>('All');
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    const monthMap = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-    return monthMap[new Date().getMonth()];
-  });
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [categoryFilter, setCategoryFilter] = useState<string>('All');
 
   // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -162,12 +158,19 @@ export default function TransactionsPage() {
 
   const filteredTransactions = transactions
     .filter(tx => typeFilter === 'All' || tx.type === typeFilter)
-    .filter(tx => accountFilter === 'All' || tx.accountId === accountFilter);
+    .filter(tx => accountFilter === 'All' || tx.accountId === accountFilter)
+    .filter(tx => categoryFilter === 'All' || tx.categoryId === categoryFilter);
+
+  const availableCategories = typeFilter === 'Expense'
+    ? expenseCategories
+    : typeFilter === 'Income'
+      ? incomeCategories
+      : [...expenseCategories, ...incomeCategories];
 
   // --- Data Fetching ---
   useEffect(() => {
     fetchTransactions();
-  }, [selectedMonth, selectedYear]);
+  }, []);
 
   useEffect(() => {
     fetchReferenceData();
@@ -254,7 +257,7 @@ export default function TransactionsPage() {
     setIsLoading(true);
     setSelectedIds(new Set());
     try {
-      const res = await fetch(`/api/all-transactions?month=${selectedMonth}&year=${selectedYear}`);
+      const res = await fetch(`/api/all-transactions`);
       const data = await res.json();
       if (res.ok) {
         setTransactions(data.transactions || []);
@@ -426,44 +429,9 @@ export default function TransactionsPage() {
       <div className="p-4 sm:p-6 space-y-4">
         {/* Filters */}
         <div className="flex flex-wrap gap-4">
-          <div className="w-[180px]">
-            <label className="text-sm font-medium mb-2 block">Month</label>
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select month" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="jan">January</SelectItem>
-                <SelectItem value="feb">February</SelectItem>
-                <SelectItem value="mar">March</SelectItem>
-                <SelectItem value="apr">April</SelectItem>
-                <SelectItem value="may">May</SelectItem>
-                <SelectItem value="jun">June</SelectItem>
-                <SelectItem value="jul">July</SelectItem>
-                <SelectItem value="aug">August</SelectItem>
-                <SelectItem value="sep">September</SelectItem>
-                <SelectItem value="oct">October</SelectItem>
-                <SelectItem value="nov">November</SelectItem>
-                <SelectItem value="dec">December</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="w-[140px]">
-            <label className="text-sm font-medium mb-2 block">Year</label>
-            <Select value={selectedYear.toString()} onValueChange={(val) => setSelectedYear(parseInt(val))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select year" />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
-                  <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <div className="w-[160px]">
             <label className="text-sm font-medium mb-2 block">Type</label>
-            <Select value={typeFilter} onValueChange={(val) => setTypeFilter(val as typeof typeFilter)}>
+            <Select value={typeFilter} onValueChange={(val) => { setTypeFilter(val as typeof typeFilter); setCategoryFilter('All'); }}>
               <SelectTrigger>
                 <SelectValue placeholder="Filter by type" />
               </SelectTrigger>
@@ -477,6 +445,22 @@ export default function TransactionsPage() {
               </SelectContent>
             </Select>
           </div>
+          {(typeFilter === 'All' || typeFilter === 'Expense' || typeFilter === 'Income') && availableCategories.length > 0 && (
+            <div className="w-[200px]">
+              <label className="text-sm font-medium mb-2 block">Category</label>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All">All Categories</SelectItem>
+                  {availableCategories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="w-[200px]">
             <label className="text-sm font-medium mb-2 block">Account</label>
             <Select value={accountFilter} onValueChange={setAccountFilter}>

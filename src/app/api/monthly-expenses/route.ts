@@ -106,7 +106,7 @@ async function fetchMonthlyExpensesFromDB({
         AND t.DATE <= ?
       ORDER BY t.DATE DESC
     `;
-
+    console.log(sql+ " "+fromTimestamp+ " "+toTimestamp);
     const transactions = await query<{
       ID: number;
       DATE: number;
@@ -158,7 +158,7 @@ async function fetchSplitwiseAdjustmentsFromDB({
       INNER JOIN Transactions t ON st.TRANSACTION_ID = t.ID
       LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
       LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
-      WHERE st.TRANSACTION_ID IS NOT NULL
+      WHERE st.TRANSACTION_ID IS NOT NULL AND st.IS_SETTLED = 1
         AND t.DATE >= ?
         AND t.DATE <= ?
     `;
@@ -208,7 +208,7 @@ async function fetchUnsettledSplitwiseTransactionsFromDB({
       INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
       LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
       LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
-      WHERE st.TRANSACTION_ID IS NOT NULL
+      WHERE st.TRANSACTION_ID IS NOT NULL AND st.IS_SETTLED = 0
         AND t.DATE >= ?
         AND t.DATE <= ?
       ORDER BY t.DATE DESC
@@ -255,7 +255,7 @@ async function fetchPendingSplitwiseExpensesFromDB({
         sf.NAME as FRIEND_NAME
       FROM SplitwiseTransactions st
       INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
-      WHERE st.TRANSACTION_ID IS NULL
+      WHERE st.TRANSACTION_ID IS NULL AND st.IS_SETTLED = 0
     `;
 
     const pendingExpenses = await query<{

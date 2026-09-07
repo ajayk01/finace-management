@@ -3,15 +3,13 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { SplitwiseFriend } from '@/types/database';
+import { getSplitwiseCookie, missingSplitwiseCookieResponse, splitwiseCookieHeaders } from '@/lib/splitwise-auth';
 
 // Helper function to make authenticated requests to Splitwise
-async function fetchSplitwise(endpoint: string, apiKey: string) {
+async function fetchSplitwise(endpoint: string, cookie: string) {
     const url = `https://secure.splitwise.com/api/v3.0/${endpoint}`;
     const response = await fetch(url, {
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-        }
+        headers: splitwiseCookieHeaders(cookie, 'application/json')
     });
 
     if (!response.ok) {
@@ -23,12 +21,10 @@ async function fetchSplitwise(endpoint: string, apiKey: string) {
     return response.json();
 }
 
-export async function GET() { 
-    const  SPLITWISE_API_KEY  = "nhYfFpWs6ZpcgnlCUDbySBXCleWqbsi12sSC8mjP";
-
-    // SPLITWISE_CONSUMER_KEY and SPLITWISE_CONSUMER_SECRET are not needed for API Key auth
-    if (!SPLITWISE_API_KEY) {
-        return NextResponse.json({ error: 'Splitwise API key is not configured.' }, { status: 500 });
+export async function GET(request: Request) {
+    const cookie = getSplitwiseCookie(request);
+    if (!cookie) {
+        return missingSplitwiseCookieResponse();
     }
 
     try {
@@ -42,11 +38,11 @@ export async function GET() {
             }
         });
 
-        const { groups } = await fetchSplitwise('get_groups', SPLITWISE_API_KEY);
+        const { groups } = await fetchSplitwise('get_groups', cookie);
 
         const groupsWithMembers = await Promise.all(
             (groups || []).map(async (group: any) => {
-                const groupDetails = await fetchSplitwise(`get_group/${group.id}`, SPLITWISE_API_KEY);
+                const groupDetails = await fetchSplitwise(`get_group/${group.id}`, cookie);
                 const members = groupDetails.group.members.map((member: any) => ({
                     id: member.id.toString(),
                     friendId: splitwiseFriendIdToDbId.get(member.id.toString()) ?? null,

@@ -127,6 +127,7 @@ const getAmountColor = (
 export default function SplitwisePage() {
   const router = useRouter();
   const { toast } = useToast();
+  const [splitwiseCookie, setSplitwiseCookie] = useState("");
 
   // Friends balance state
   const [friendsBalance, setFriendsBalance] = useState<FriendBalance[]>([]);
@@ -194,6 +195,10 @@ export default function SplitwisePage() {
     return !(splitwiseIsEmpty && notionIsEmpty);
   });
 
+  const splitwiseHeaders: Record<string, string> = splitwiseCookie
+    ? { "X-Splitwise-Cookie": splitwiseCookie }
+    : {};
+
   // ==================== DATA FETCHING ====================
 
   const fetchFriendsBalance = useCallback(
@@ -204,7 +209,7 @@ export default function SplitwisePage() {
         const url = forceRefresh
           ? "/api/friends-balance?refresh=true"
           : "/api/friends-balance";
-        const res = await fetch(url);
+        const res = await fetch(url, { headers: splitwiseHeaders });
         if (!res.ok) throw new Error("Failed to fetch friends balance");
         const data = await res.json();
         setFriendsBalance(data.friends || []);
@@ -216,7 +221,7 @@ export default function SplitwisePage() {
         setIsLoading(false);
       }
     },
-    []
+    [splitwiseCookie]
   );
 
   const fetchBankAccounts = useCallback(async () => {
@@ -258,10 +263,25 @@ export default function SplitwisePage() {
   }, []);
 
   useEffect(() => {
-    fetchFriendsBalance();
     fetchBankAccounts();
     fetchCategories();
-  }, [fetchFriendsBalance, fetchBankAccounts, fetchCategories]);
+  }, [fetchBankAccounts, fetchCategories]);
+
+  useEffect(() => {
+    const savedCookie = window.localStorage.getItem("splitwise-cookie");
+    if (savedCookie) {
+      setSplitwiseCookie(savedCookie);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (splitwiseCookie) {
+      fetchFriendsBalance();
+    } else {
+      setFriendsBalance([]);
+      setIsLoading(false);
+    }
+  }, [splitwiseCookie, fetchFriendsBalance]);
 
   // ==================== FRIEND TRANSACTION FETCHING ====================
 
@@ -293,7 +313,8 @@ export default function SplitwisePage() {
     setIsFetchingUnsettled(true);
     try {
       const response = await fetch(
-        `/api/unsettled-splitwise-expenses?friendId=${friendId}`
+        `/api/unsettled-splitwise-expenses?friendId=${friendId}`,
+        { headers: splitwiseHeaders }
       );
       if (!response.ok) throw new Error("Failed to fetch unsettled expenses");
       const data = await response.json();
@@ -570,7 +591,9 @@ export default function SplitwisePage() {
   const handleSyncSplitwise = async () => {
     setIsSyncing(true);
     try {
-      const response = await fetch("/api/splitwise-sync");
+      const response = await fetch("/api/splitwise-sync", {
+        headers: splitwiseHeaders,
+      });
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(
@@ -633,6 +656,22 @@ export default function SplitwisePage() {
           </div>
           {!selectedFriend && (
             <div className="flex items-center gap-2">
+              <Input
+                type="password"
+                value={splitwiseCookie}
+                onChange={(event) => {
+                  const cookie = event.target.value;
+                  setSplitwiseCookie(cookie);
+                  if (cookie) {
+                    window.localStorage.setItem("splitwise-cookie", cookie);
+                  } else {
+                    window.localStorage.removeItem("splitwise-cookie");
+                  }
+                }}
+                placeholder="Splitwise cookie"
+                aria-label="Splitwise cookie"
+                className="h-9 w-56"
+              />
               <Button
                 variant="outline"
                 size="sm"

@@ -137,6 +137,8 @@ export function AddExpenseDialog({
   const [splitwiseError, setSplitwiseError] = useState<string | null>(null);
   const [splitwiseUsers, setSplitwiseUsers] = useState<SplitwiseUser[]>([]);
   const [customAmounts, setCustomAmounts] = useState<Record<string, number>>({});
+  const [splitwiseCookie, setSplitwiseCookie] = useState('');
+  const [splitwiseCsrfToken, setSplitwiseCsrfToken] = useState('');
   
   // State for Credit Card Caps
   const [creditCardCaps, setCreditCardCaps] = useState<CreditCardCap[]>([]);
@@ -203,6 +205,11 @@ export function AddExpenseDialog({
   const splitType = form.watch('splitType');
   const totalAmount = form.watch('amount');
 
+  useEffect(() => {
+    setSplitwiseCookie(window.localStorage.getItem('splitwise-cookie') || '');
+    setSplitwiseCsrfToken(window.localStorage.getItem('splitwise-csrf-token') || '');
+  }, []);
+
   // Load Splitwise data if editing expense with Splitwise
   useEffect(() => {
     if (open && isEditMode && initialValues?.includeSplitwise && initialValues.splitwiseGroupId) {
@@ -211,7 +218,11 @@ export function AddExpenseDialog({
         setIsSplitwiseLoading(true);
         setSplitwiseError(null);
         try {
-          const res = await fetch('/api/splitwise');
+          const savedCookie = window.localStorage.getItem('splitwise-cookie');
+          if (!savedCookie) throw new Error('Enter a Splitwise cookie to load groups.');
+          const res = await fetch('/api/splitwise', {
+            headers: { 'X-Splitwise-Cookie': savedCookie },
+          });
           if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch Splitwise data');
           const data = await res.json();
           const groups = data.groups || [];
@@ -417,7 +428,15 @@ export function AddExpenseDialog({
         console.log(`${isEditMode ? 'Editing' : 'Adding'} expense with payload:`, payload);
         const response = await fetch('/api/add-expense', {
             method: isEditMode ? 'PUT' : 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(values.includeSplitwise && splitwiseCookie
+                ? { 'X-Splitwise-Cookie': splitwiseCookie }
+                : {}),
+              ...(values.includeSplitwise && splitwiseCsrfToken
+                ? { 'X-Splitwise-CSRF-Token': splitwiseCsrfToken }
+                : {}),
+            },
             body: JSON.stringify(payload),
         });
 
@@ -530,12 +549,19 @@ export function AddExpenseDialog({
     const result = await form.trigger(["amount", "date", "description", "accountId", "categoryId", "subCategoryId"]);
     if (result) {
       form.setValue('includeSplitwise', true);
+      setStep(2);
+
+      if (!splitwiseCookie) {
+        return;
+      }
       
       // Fetch splitwise data only if it hasn't been fetched yet
       if(splitwiseGroups.length === 0 && !isSplitwiseLoading) {
           setIsSplitwiseLoading(true); setSplitwiseError(null);
           try {
-              const res = await fetch('/api/splitwise');
+              const res = await fetch('/api/splitwise', {
+                headers: { 'X-Splitwise-Cookie': splitwiseCookie },
+              });
               if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch Splitwise data');
               const data = await res.json();
               setSplitwiseGroups(data.groups || []);
@@ -545,11 +571,87 @@ export function AddExpenseDialog({
               setIsSplitwiseLoading(false);
           }
       }
-      setStep(2);
     }
   }
 
+  const handleSplitwiseCookieChange = (cookie: string) => {
+    setSplitwiseCookie(cookie);
+    setSplitwiseError(null);
+    if (cookie) {
+      window.localStorage.setItem('splitwise-cookie', cookie);
+    } else {
+      window.localStorage.removeItem('splitwise-cookie');
+    }
+  };
+
+  const handleSplitwiseCsrfTokenChange = (csrfToken: string) => {
+    setSplitwiseCsrfToken(csrfToken);
+    setSplitwiseError(null);
+    if (csrfToken) {
+      window.localStorage.setItem('splitwise-csrf-token', csrfToken);
+    } else {
+      window.localStorage.removeItem('splitwise-csrf-token');
+    }
+  };
+
+  const handleLoadSplitwiseGroups = async () => {
+    if (!splitwiseCookie) {
+      setSplitwiseError('Enter a Splitwise cookie to load groups.');
+      return;
+    }
+
+    setIsSplitwiseLoading(true);
+    setSplitwiseError(null);
+    try {
+      const res = await fetch('/api/splitwise', {
+        headers: { 'X-Splitwise-Cookie': splitwiseCookie },
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch Splitwise data');
+      const data = await res.json();
+      setSplitwiseGroups(data.groups || []);
+    } catch (error) {
+      setSplitwiseError(error instanceof Error ? error.message : 'An unknown error occurred');
+    } finally {
+      setIsSplitwiseLoading(false);
+    }
+  };
+
   const renderSplitwiseContent = () => {
+    if (!splitwiseCookie || !splitwiseCsrfToken) {
+      return (
+        <div className="space-y-4 rounded-md border p-4">
+          {!splitwiseCookie && (
+            <FormItem>
+              <FormLabel>Splitwise Cookie</FormLabel>
+              <Input
+                type="password"
+                value={splitwiseCookie}
+                onChange={(event) => handleSplitwiseCookieChange(event.target.value)}
+                placeholder="Paste your Splitwise cookie"
+                autoComplete="off"
+              />
+            </FormItem>
+          )}
+          {!splitwiseCsrfToken && (
+            <FormItem>
+              <FormLabel>Splitwise CSRF Token</FormLabel>
+              <Input
+                type="password"
+                value={splitwiseCsrfToken}
+                onChange={(event) => handleSplitwiseCsrfTokenChange(event.target.value)}
+                placeholder="Paste the x-csrf-token value"
+                autoComplete="off"
+              />
+            </FormItem>
+          )}
+          {splitwiseError && <p className="text-sm text-destructive">{splitwiseError}</p>}
+          <Button type="button" onClick={handleLoadSplitwiseGroups}>
+            Load Splitwise Groups
+          </Button>
+        </div>
+      );
+    }
+
     if (isSplitwiseLoading) {
       return (
         <div className="flex items-center justify-center p-8 space-x-2 text-muted-foreground">

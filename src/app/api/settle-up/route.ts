@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       type: 'unsettled' | 'settled';
     }> = [];
 
-    // 1. Gather unsettled expenses (from Splitwise sync - TRANSACTION_ID IS NULL)
+    // 1. Gather outstanding expenses imported from Splitwise.
     if (unsettledExpenses && Array.isArray(unsettledExpenses) && unsettledExpenses.length > 0) {
       console.log(`Processing ${unsettledExpenses.length} unsettled expenses`);
 
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
         // Get the SPLITED_TRANSACTION_ID from SplitwiseTransactions
         const stResult = await query<{ SPLITED_TRANSACTION_ID: number | null }>(
           `SELECT SPLITED_TRANSACTION_ID FROM SplitwiseTransactions 
-           WHERE SPLITWISE_TRANSACTION_ID = ? AND FRIEND_ID = ?`,
+           WHERE SPLITWISE_TRANSACTION_ID = ? AND FRIEND_ID = ? AND IS_SETTLED = 0`,
           [expense.splitwiseTransactionId, friendDbId]
         );
 
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. Gather settled transactions (where TRANSACTION_ID is not null - user already paid)
+    // 2. Gather outstanding transactions where the user already paid.
     const hasSpecificIds = Array.isArray(settledTransactionIds) && settledTransactionIds.length > 0;
     const fetchTransactionsSql = hasSpecificIds
       ? `
@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
       FROM SplitwiseTransactions st
       INNER JOIN Transactions t ON st.TRANSACTION_ID = t.ID
       INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
-      WHERE st.FRIEND_ID = ? AND st.TRANSACTION_ID IN (${settledTransactionIds.map(() => '?').join(',')})
+      WHERE st.FRIEND_ID = ? AND st.IS_SETTLED = 0 AND st.TRANSACTION_ID IN (${settledTransactionIds.map(() => '?').join(',')})
       ORDER BY t.DATE ASC
     `
       : `
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
       FROM SplitwiseTransactions st
       INNER JOIN Transactions t ON st.TRANSACTION_ID = t.ID
       INNER JOIN SplitwiseFriends sf ON st.FRIEND_ID = sf.ID
-      WHERE st.FRIEND_ID = ?
+      WHERE st.FRIEND_ID = ? AND st.IS_SETTLED = 0
       ORDER BY t.DATE ASC
     `;
 
@@ -169,6 +169,12 @@ export async function POST(request: NextRequest) {
     // 3. Create ONE settlement transaction for the total amount at the settlement date
     if (finalSettlementAmount !== 0) {
       const appTransactionIds = allSplitsToProcess.map(s => s.splitedTransactionId).filter(Boolean).join(', ');
+      const includesImportedSplitwiseExpense = allSplitsToProcess.some(
+        (split) => split.type === 'unsettled'
+      );
+      const settlementDescription = `Settlement : ${friendName} [${appTransactionIds}]${
+        includesImportedSplitwiseExpense ? ', From Splitwise' : ''
+      }`;
       const settlementSql = `
         INSERT INTO Transactions 
         (AMOUNT, DATE, NOTES, FROM_ACCOUNT_ID, CATEGORY_ID, SUB_CATEGORY_ID, TRANSCATION_TYPE) 
@@ -178,7 +184,7 @@ export async function POST(request: NextRequest) {
       const settlementResult = await query(settlementSql, [
         -finalSettlementAmount,
         settledDate,
-        `Settlement : ${friendName} [${appTransactionIds}]`,
+        settlementDescription,
         accountId,
         null, // No single category for combined settlement
         null,
@@ -195,7 +201,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 4. For each split, update the dummy transaction (ADD split amount) and clean up SplitwiseTransactions
+    // 4. For each split, update the dummy transaction and finalize its Splitwise record.
     for (const split of allSplitsToProcess) {
       try {
         if (split.splitedTransactionId) {
@@ -222,21 +228,23 @@ export async function POST(request: NextRequest) {
           console.log(`Updated dummy tx ${split.splitedTransactionId}: added ₹${split.splitedAmount} for ${friendName}`);
         }
 
-        // Delete SplitwiseTransactions row
+        // Imported expenses have no local transaction history, so remove them after settlement.
         if (split.type === 'unsettled') {
           await query(
-            `DELETE FROM SplitwiseTransactions 
-             WHERE SPLITWISE_TRANSACTION_ID = ? AND FRIEND_ID = ?`,
+            `DELETE FROM SplitwiseTransactions
+             WHERE SPLITWISE_TRANSACTION_ID = ? AND FRIEND_ID = ?
+               AND TRANSACTION_ID IS NULL AND IS_SETTLED = 0`,
             [split.splitwiseTransactionId, friendDbId]
           );
         } else {
           await query(
-            `DELETE FROM SplitwiseTransactions WHERE TRANSACTION_ID = ? AND FRIEND_ID = ?`,
+            `UPDATE SplitwiseTransactions SET IS_SETTLED = 1
+             WHERE TRANSACTION_ID = ? AND FRIEND_ID = ? AND IS_SETTLED = 0`,
             [split.transactionId, friendDbId]
           );
         }
 
-        console.log(`Deleted SplitwiseTransactions for ${split.splitwiseTransactionId}`);
+        console.log(`${split.type === 'unsettled' ? 'Deleted imported' : 'Marked settled'} SplitwiseTransactions for ${split.splitwiseTransactionId}`);
 
         offsetEntries.push({
           splitwiseTransactionId: split.splitwiseTransactionId,

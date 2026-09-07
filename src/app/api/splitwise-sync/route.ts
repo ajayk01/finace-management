@@ -2,17 +2,15 @@
 
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-
-const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
+import { getSplitwiseCookie, missingSplitwiseCookieResponse, splitwiseCookieHeaders } from '@/lib/splitwise-auth';
 const SPLITWISE_CURRENT_USER_ID = process.env.SPLITWISE_CURRENT_USER_ID || "57391213";
 // Helper function to make authenticated requests to Splitwise
-async function fetchSplitwise(endpoint: string) 
+async function fetchSplitwise(endpoint: string, cookie: string)
 {
     const url = `https://secure.splitwise.com/api/v3.0/${endpoint}`;
     const response = await fetch(url, {
         headers: {
-            'Authorization': `Bearer ${SPLITWISE_API_KEY}`,
-            'Content-Type': 'application/json'
+            ...splitwiseCookieHeaders(cookie, 'application/json')
         },
         cache: 'no-store'
     });
@@ -26,11 +24,11 @@ async function fetchSplitwise(endpoint: string)
     return response.json();
 }
 
-export async function GET() 
+export async function GET(request: Request)
 {
-    if (!SPLITWISE_API_KEY) 
-    {
-        return NextResponse.json({ error: 'Splitwise API key is not configured.' }, { status: 500 });
+    const cookie = getSplitwiseCookie(request);
+    if (!cookie) {
+        return missingSplitwiseCookieResponse();
     }
 
     try {
@@ -62,7 +60,7 @@ export async function GET()
                 endpoint = `get_notifications?limit=${limit}`;
             }
 
-            const notificationsData = await fetchSplitwise(endpoint);
+            const notificationsData = await fetchSplitwise(endpoint, cookie);
             allNotifications = notificationsData.notifications || [];
             
             // Since notifications are returned newest first, check if the oldest notification is still after lastSyncTime
@@ -131,7 +129,7 @@ export async function GET()
                 
                 try {
                     // Fetch expense details
-                    const expenseData = await fetchSplitwise(`get_expense/${notification.source.id}`);
+                    const expenseData = await fetchSplitwise(`get_expense/${notification.source.id}`, cookie);
                     const expense = expenseData.expense;
                     
                     // Format date as DD-MM-YYYY
@@ -199,8 +197,8 @@ export async function GET()
             }
             
             await query(
-                'INSERT INTO SplitwiseTransactions (SPLITWISE_TRANSACTION_ID, FRIEND_ID, SPLITED_AMOUNT) VALUES (?, ?, ?)',
-                [detail.expenseId, friendId, detail.amount]
+                'INSERT INTO SplitwiseTransactions (SPLITWISE_TRANSACTION_ID, FRIEND_ID, SPLITED_AMOUNT, IS_SETTLED) VALUES (?, ?, ?, ?)',
+                [detail.expenseId, friendId, detail.amount, 0]
             );
             
             console.log(`Inserted expense ${detail.expenseId} into database`);
@@ -227,7 +225,7 @@ export async function GET()
     }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
     // Allow POST method as well for sync operations
-    return GET();
+    return GET(request);
 }

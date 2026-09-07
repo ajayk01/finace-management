@@ -4,10 +4,11 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { SplitwiseFriend } from '@/types/database';
+import { getSplitwiseCookie, missingSplitwiseCookieResponse, splitwiseCookieHeaders } from '@/lib/splitwise-auth';
 
 // Cache configuration
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes in milliseconds
-let splitwiseCache: { data: any; timestamp: number } | null = null;
+let splitwiseCache: { cookie: string; data: any; timestamp: number } | null = null;
 
 interface FriendBalance {
     name: string;
@@ -17,8 +18,10 @@ interface FriendBalance {
 }
 
 // Helper to check if cache is valid
-function isCacheValid(): boolean {
-    return splitwiseCache !== null && (Date.now() - splitwiseCache.timestamp) < CACHE_TTL;
+function isCacheValid(cookie: string): boolean {
+    return splitwiseCache !== null &&
+        splitwiseCache.cookie === cookie &&
+        (Date.now() - splitwiseCache.timestamp) < CACHE_TTL;
 }
 
 // Helper to clear cache (useful for debugging or forced refresh)
@@ -28,9 +31,9 @@ function clearCache(): void {
 }
 
 // Helper to fetch data from Splitwise with caching
-async function fetchSplitwiseWithCache(endpoint: string, apiKey: string) {
+async function fetchSplitwiseWithCache(endpoint: string, cookie: string) {
     // Return cached data if valid
-    if (isCacheValid()) {
+    if (isCacheValid(cookie)) {
         console.log('Using cached Splitwise data');
         return splitwiseCache!.data;
     }
@@ -39,7 +42,7 @@ async function fetchSplitwiseWithCache(endpoint: string, apiKey: string) {
     const url = `https://secure.splitwise.com/api/v3.0/${endpoint}`;
     try {
         const response = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${apiKey}` },
+            headers: splitwiseCookieHeaders(cookie),
             cache: 'no-store' // Avoid caching sensitive data
         });
         if (!response.ok) {
@@ -51,6 +54,7 @@ async function fetchSplitwiseWithCache(endpoint: string, apiKey: string) {
         
         // Update cache
         splitwiseCache = {
+            cookie,
             data,
             timestamp: Date.now()
         };
@@ -83,10 +87,9 @@ async function fetchFriendsFromDB() {
 }
 
 export async function GET(request: Request) {
-    const { SPLITWISE_API_KEY } = process.env;
-
-    if (!SPLITWISE_API_KEY) {
-        return NextResponse.json({ error: 'Splitwise API key is not configured.' }, { status: 500 });
+    const cookie = getSplitwiseCookie(request);
+    if (!cookie) {
+        return missingSplitwiseCookieResponse();
     }
 
     try {
@@ -98,7 +101,7 @@ export async function GET(request: Request) {
             clearCache();
         }
         const [splitwiseData, dbFriends] = await Promise.all([
-            fetchSplitwiseWithCache('get_friends', SPLITWISE_API_KEY),
+            fetchSplitwiseWithCache('get_friends', cookie),
             fetchFriendsFromDB()
         ]);
 

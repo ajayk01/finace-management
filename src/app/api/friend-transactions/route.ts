@@ -24,7 +24,7 @@ async function fetchFriendTransactionsFromDB(friendId: string): Promise<any[]> {
     INNER JOIN Transactions t ON st.TRANSACTION_ID = t.ID
     LEFT JOIN Category c ON t.CATEGORY_ID = c.ID
     LEFT JOIN SubCategory sc ON t.SUB_CATEGORY_ID = sc.ID
-    WHERE st.FRIEND_ID = ?
+    WHERE st.FRIEND_ID = ? AND st.IS_SETTLED = 0
     ORDER BY t.DATE DESC
   `;
   

@@ -64,6 +64,7 @@ export interface SplitwiseTransaction {
   TRANSACTION_ID: number;
   SPLITED_AMOUNT: number;
   SPLITED_TRANSACTION_ID: number | null; // References the dummy transaction in Transactions table
+  IS_SETTLED: boolean | number; // 0: outstanding, 1: settled
 }
 
 export interface CreditCardDetails {

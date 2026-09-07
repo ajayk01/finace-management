@@ -5,13 +5,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query, transaction as dbTransaction, TransactionType, AccountType } from '@/lib/db';
 import type { SplitwiseFriend } from '@/types/database';
+import { getSplitwiseCookie, getSplitwiseCsrfToken, splitwiseMutationHeaders } from '@/lib/splitwise-auth';
 
 const CURRENT_USER_ID = process.env.SPLITWISE_CURRENT_USER_ID || "57391213"; // Your Splitwise user ID
 
 const userMapping = new Map<string, string>();
 
 // Splitwise API function using pure HTTP requests
-async function addSplitwiseExpense({ amount, description, groupId, userIds, splitType, customAmounts, date }: {
+async function addSplitwiseExpense({ amount, description, groupId, userIds, splitType, customAmounts, date, cookie, csrfToken }: {
     amount: number;
     description: string;
     groupId: string;
@@ -19,14 +20,9 @@ async function addSplitwiseExpense({ amount, description, groupId, userIds, spli
     splitType?: 'equal' | 'custom';
     customAmounts?: Record<string, number>;
     date?: string;
+    cookie: string;
+    csrfToken: string;
 }) {
-    const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
-    
-    if (!SPLITWISE_API_KEY) 
-    {
-        throw new Error('Splitwise API key not configured');
-    }
-
     // Create form data for Splitwise API
     const formData = new URLSearchParams();
     formData.append('cost', amount.toString());
@@ -41,6 +37,7 @@ async function addSplitwiseExpense({ amount, description, groupId, userIds, spli
     // Determine if we're using equal split or custom amounts
     const useEqualSplit = splitType === 'equal' || !splitType || !customAmounts;
     formData.append('split_equally', useEqualSplit ? 'true' : 'false');
+    formData.append('creation_method', useEqualSplit ? 'equal' : 'custom');
     
     if (useEqualSplit) {
         // Equal split logic with proper rounding to avoid decimal mismatch
@@ -107,10 +104,7 @@ async function addSplitwiseExpense({ amount, description, groupId, userIds, spli
 
     const response = await fetch('https://secure.splitwise.com/api/v3.0/create_expense', {
         method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${SPLITWISE_API_KEY}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers: splitwiseMutationHeaders(cookie, csrfToken, 'application/x-www-form-urlencoded'),
         body: formData
     });
 
@@ -273,8 +267,9 @@ async function createSplitwiseTransaction({
             TRANSACTION_ID,
             FRIEND_ID,
             SPLITED_AMOUNT,
-            SPLITED_TRANSACTION_ID
-        ) VALUES (?, ?, ?, ?, ?)
+            SPLITED_TRANSACTION_ID,
+            IS_SETTLED
+        ) VALUES (?, ?, ?, ?, ?, ?)
     `;
     
     await query(sql, [
@@ -282,7 +277,8 @@ async function createSplitwiseTransaction({
         transactionId,
         parseInt(friendId),
         amount,
-        splitedTransactionId
+        splitedTransactionId,
+        0
     ]);
     
     console.log(`✅ Created Splitwise transaction for friend ${friendId}, amount: ${amount}, dummy tx: ${splitedTransactionId}`);
@@ -314,7 +310,8 @@ async function createCreditCardTransaction({
         
         const capPercentage = Number(capRows[0].CAP_PERCENTAGE) || 0;
         const rewardPerAmount = Number(capRows[0].REWARD_PER_AMOUNT) || 100;
-        const rewards = (Math.trunc(amount) * capPercentage) / rewardPerAmount;
+        console.log(`Calculating rewards for cap ${capId}: amount ${amount}, capPercentage ${capPercentage}, rewardPerAmount ${rewardPerAmount}`);
+        const rewards = Math.floor(amount / rewardPerAmount) * capPercentage;
         
         const insertSql = `
             INSERT INTO CreditCardTransactions (
@@ -387,6 +384,15 @@ export async function POST(request: NextRequest)
         const body = await request.json();
         const parsedData = addExpenseSchema.parse(body);
 
+        const splitwiseCookie = getSplitwiseCookie(request);
+        const splitwiseCsrfToken = getSplitwiseCsrfToken(request);
+        if (parsedData.includeSplitwise && (!splitwiseCookie || !splitwiseCsrfToken)) {
+            return NextResponse.json(
+                { error: 'A Splitwise cookie and CSRF token are required.' },
+                { status: 401 }
+            );
+        }
+
         let { amount, charges, date, description, account, categoryId, subCategoryId, capId, includeSplitwise, splitwiseGroupName, splitwiseUserIds, splitwiseGroupId, splitType, customAmounts } = parsedData;
         let splitAmt: number = 0;
         console.log("customAmounts received:", customAmounts);
@@ -448,9 +454,11 @@ export async function POST(request: NextRequest)
                     description: parsedData.description? parsedData.description : "No description",
                     groupId: splitwiseGroupId,
                     userIds: splitwiseUserIds,
-                    splitType: 'custom',
+                    splitType,
                     customAmounts: customAmounts,
-                    date: date
+                    date: date,
+                    cookie: splitwiseCookie!,
+                    csrfToken: splitwiseCsrfToken!,
                 });
                 // Extract Splitwise transaction ID from the response
                 splitwiseTransactionId = splitwiseResponse?.expenses?.[0]?.id?.toString() || splitwiseResponse?.id?.toString();
@@ -588,11 +596,20 @@ const updateExpenseSchema = z.object({
 export async function PUT(request: NextRequest) {
     // Ensure mapping is up to date for splitwise operations
     await createSplitwiseToDbMapping();
+    const splitwiseCookie = getSplitwiseCookie(request);
+    const splitwiseCsrfToken = getSplitwiseCsrfToken(request);
 
     try {
         const body = await request.json();
         const parsedData = updateExpenseSchema.parse(body);
         const { id, amount, charges, date, description, account, categoryId, subCategoryId, capId, updateSplitwise, includeSplitwise, splitwiseGroupId, splitwiseUserIds, splitType, customAmounts: rawCustomAmounts } = parsedData;
+
+        if (includeSplitwise && (!splitwiseCookie || !splitwiseCsrfToken)) {
+            return NextResponse.json(
+                { error: 'A Splitwise cookie and CSRF token are required.' },
+                { status: 401 }
+            );
+        }
 
         const epochTime = new Date(date).getTime();
         const transactionId = parseInt(id);
@@ -655,17 +672,16 @@ export async function PUT(request: NextRequest) {
 
         if (hadSplitwise) {
             // Delete existing splitwise expense from Splitwise API
-            const SPLITWISE_API_KEY = process.env.SPLITWISE_API_KEY;
             const existingSwTxIds = [...new Set(existingSplitwise.map((r: { SPLITWISE_TRANSACTION_ID: string }) => r.SPLITWISE_TRANSACTION_ID))];
             
-            if (SPLITWISE_API_KEY) {
+            if (splitwiseCookie && splitwiseCsrfToken) {
                 for (const swTxId of existingSwTxIds) {
                     try {
                         const res = await fetch(
                             `https://secure.splitwise.com/api/v3.0/delete_expense/${swTxId}`,
                             {
                                 method: 'POST',
-                                headers: { 'Authorization': `Bearer ${SPLITWISE_API_KEY}` },
+                                headers: splitwiseMutationHeaders(splitwiseCookie, splitwiseCsrfToken),
                             }
                         );
                         if (res.ok) {
@@ -724,9 +740,11 @@ export async function PUT(request: NextRequest) {
                 description: description || 'No description',
                 groupId: splitwiseGroupId,
                 userIds: splitwiseUserIds,
-                splitType: 'custom',
+                splitType,
                 customAmounts: computedCustomAmounts,
-                date: date
+                date: date,
+                cookie: splitwiseCookie!,
+                csrfToken: splitwiseCsrfToken!,
             });
 
             const splitwiseTransactionId = splitwiseResponse?.expenses?.[0]?.id?.toString() || splitwiseResponse?.id?.toString();
