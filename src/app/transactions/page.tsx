@@ -102,6 +102,8 @@ export default function TransactionsPage() {
   // Data state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
   const [expenseCategories, setExpenseCategories] = useState<Category[]>([]);
   const [expenseSubCategories, setExpenseSubCategories] = useState<SubCategory[]>([]);
   const [incomeCategories, setIncomeCategories] = useState<Category[]>([]);
@@ -253,14 +255,23 @@ export default function TransactionsPage() {
     }
   };
 
-  const fetchTransactions = async () => {
-    setIsLoading(true);
-    setSelectedIds(new Set());
+  const fetchTransactions = async (loadMore = false) => {
+    if (loadMore) {
+      setIsLoadingMore(true);
+    } else {
+      setIsLoading(true);
+      setSelectedIds(new Set());
+    }
     try {
-      const res = await fetch(`/api/all-transactions`);
+      const offset = loadMore ? transactions.length : 0;
+      const res = await fetch(`/api/all-transactions?limit=50&offset=${offset}`);
       const data = await res.json();
       if (res.ok) {
-        setTransactions(data.transactions || []);
+        setTransactions((current) => loadMore
+          ? [...current, ...(data.transactions || [])]
+          : data.transactions || []
+        );
+        setHasMoreTransactions(Boolean(data.hasMore));
       } else {
         toast({ variant: "destructive", title: "Error", description: data.error || "Failed to fetch transactions" });
       }
@@ -268,7 +279,11 @@ export default function TransactionsPage() {
       console.error("Error fetching transactions:", error);
       toast({ variant: "destructive", title: "Error", description: "An error occurred while fetching transactions" });
     } finally {
-      setIsLoading(false);
+      if (loadMore) {
+        setIsLoadingMore(false);
+      } else {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -520,6 +535,7 @@ export default function TransactionsPage() {
             <p className="text-muted-foreground">No transactions found for this month.</p>
           </div>
         ) : (
+          <>
           <div className="border rounded-md overflow-auto">
             <Table>
               <TableHeader className="sticky top-0 bg-background z-10">
@@ -625,6 +641,14 @@ export default function TransactionsPage() {
               </TableBody>
             </Table>
           </div>
+          {hasMoreTransactions && (
+            <div className="flex justify-center pt-4">
+              <Button variant="outline" onClick={() => fetchTransactions(true)} disabled={isLoadingMore}>
+                {isLoadingMore ? "Loading..." : "Load More"}
+              </Button>
+            </div>
+          )}
+          </>
         )}
       </div>
 

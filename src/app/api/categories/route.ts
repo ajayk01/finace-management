@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
     // Fetch categories
     const categoriesSql = `
       SELECT ID, CATEGORY_NAME, BUDGET, CATEGORY_TYPE
-      FROM Category`;
+      FROM Category
+      WHERE CATEGORY_TYPE IN (${categoryTypeFilter.join(',')})`;
     
     const categories = await query<DBCategory>(categoriesSql, []);
 

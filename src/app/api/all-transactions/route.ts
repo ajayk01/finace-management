@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { query, TransactionType, CategoryType } from '@/lib/db';
-import { getFromToDates } from '@/lib/date-utils';
 
 interface SplitwiseDetail {
   splitwiseTransactionId: string;
@@ -30,18 +29,8 @@ interface Transaction {
   splitwiseDetails?: SplitwiseDetail[];
 }
 
-async function fetchAllTransactionsFromDB({
-  month,
-  year
-}: {
-  month?: string;
-  year?: string;
-}): Promise<Transaction[]> {
+async function fetchAllTransactionsFromDB(limit: number, offset: number): Promise<Transaction[]> {
   try {
-    const { startDate, endDate } = getFromToDates(String(month), Number(year));
-    const fromTimestamp = startDate.getTime();
-    const toTimestamp = endDate.getTime();
-
     const sql = `
       SELECT 
     t.ID,
@@ -57,7 +46,7 @@ async function fetchAllTransactionsFromDB({
     t.TO_ACCOUNT_ID,
     aFrom.ACCOUNT_NAME AS FROM_ACCOUNT_NAME,
     aTo.ACCOUNT_NAME AS TO_ACCOUNT_NAME,
-    cct.CapId AS CAP_ID
+    cct.CAP_ID
     FROM Transactions t
     LEFT JOIN Category c 
         ON t.CATEGORY_ID = c.ID
@@ -67,10 +56,15 @@ async function fetchAllTransactionsFromDB({
         ON t.FROM_ACCOUNT_ID = aFrom.ID
     LEFT JOIN Accounts aTo 
         ON t.TO_ACCOUNT_ID = aTo.ID
-    LEFT JOIN CreditCardTransactions cct 
-        ON t.ID = cct.TransactionId
-    WHERE t.DATE BETWEEN ? AND ?
-    ORDER BY t.DATE DESC;
+    LEFT JOIN (
+      SELECT TransactionId, MAX(CapId) AS CAP_ID
+      FROM CreditCardTransactions
+      GROUP BY TransactionId
+    ) cct ON t.ID = cct.TransactionId
+    WHERE t.AMOUNT <> 0
+      AND (t.FROM_ACCOUNT_ID IS NOT NULL OR t.TO_ACCOUNT_ID IS NOT NULL)
+    ORDER BY t.DATE DESC
+    LIMIT ${limit} OFFSET ${offset};
     `;
 
     console.log("Executing SQL to fetch all transactions ", sql);
@@ -90,11 +84,19 @@ async function fetchAllTransactionsFromDB({
       FROM_ACCOUNT_NAME: string;
       TO_ACCOUNT_NAME: string;
       CAP_ID: number | null;
-    }>(sql, [fromTimestamp, toTimestamp]);
+    }>(sql, []);
 
     console.log(`Fetched ${transactions.length} total transactions`);
 
+    const seenTransactionIds = new Set<number>();
     const mappedTransactions = transactions
+      .filter((tx: any) => {
+        if (seenTransactionIds.has(tx.ID)) {
+          return false;
+        }
+        seenTransactionIds.add(tx.ID);
+        return true;
+      })
       .filter((tx: any) => tx.AMOUNT !== 0)
       .filter((tx: any) => tx.FROM_ACCOUNT_ID != null || tx.TO_ACCOUNT_ID != null)
       .map((tx: any) => {
@@ -218,8 +220,14 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
-    const month = searchParams.get("month");
-    const year = searchParams.get("year");
+    const requestedLimit = Number(searchParams.get("limit"));
+    const requestedOffset = Number(searchParams.get("offset"));
+    const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 50)
+      : 50;
+    const offset = Number.isInteger(requestedOffset) && requestedOffset >= 0
+      ? requestedOffset
+      : 0;
 
     // Fetch single transaction by ID
     if (id) {
@@ -272,11 +280,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (!month || !year) {
-      return NextResponse.json({ error: "Month and year are required query parameters." }, { status: 400 });
-    }
-
-    const allTransactions = await fetchAllTransactionsFromDB({ month, year });
+    const allTransactions = await fetchAllTransactionsFromDB(limit, offset);
 
     // Sort transactions by date (newest first)
     allTransactions.sort((a, b) => {
@@ -286,7 +290,8 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json({
-      transactions: allTransactions
+      transactions: allTransactions,
+      hasMore: allTransactions.length === limit,
     });
   } catch (error) {
     console.error("Error in /api/all-transactions:", error);
