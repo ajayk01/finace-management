@@ -409,10 +409,14 @@ export default function SplitwisePage() {
         selectedSplitTxIds.size > 0
           ? Array.from(selectedSplitTxIds)
           : splitTxData.map((tx) => tx.id);
+      const settlementAmount = splitTxData
+        .filter((tx) => idsToSettle.includes(tx.id))
+        .reduce((total, tx) => total + (Number(tx.amount) || 0), 0);
 
       const payload = {
         friendId: splitTxFriend.friendId,
         bankAccountId: splitTxBankAccount,
+        totalSettlementAmount: settlementAmount,
         unsettledExpenses: [],
         settledTransactionIds: idsToSettle,
       };
