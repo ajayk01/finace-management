@@ -23,6 +23,7 @@ const ACCOUNT_MAP: Record<string, { id: number; name: string }> =
   '9615': { id: 18, name: 'Airtel Axis CC' },
   '1238': { id: 22, name: 'SBI Pulse CC' },
   '4674': { id: 23, name: 'HDFC PhonePe Ultimo' },
+  '6282': { id: 27, name: 'HSBC CC' },
 };
 
 // ---------------------------------------------------------------------------
@@ -199,6 +200,21 @@ const parseSBICard: TransactionParser = (text) => {
 };
 
 /**
+ * HSBC Bank - credit card transaction alerts.
+ * "your HSBC Credit Card xx6282 was used for a transaction of INR 1044.00 at MAZIF T P on 15/09/26"
+ */
+const parseHSBCCard: TransactionParser = (text) => {
+  const pattern = /HSBC Credit Card\s+xx(\d{4})\s+was used for a transaction of\s+INR\s+([\d,]+(?:\.\d{2})?)\s+at\s+(.+?)\s+on\s+\d{2}\/\d{2}\/\d{2}/i;
+  const m = text.match(pattern);
+  if (!m) return null;
+  return {
+    accountLast4: m[1],
+    amount: parseFloat(m[2].replace(/,/g, '')),
+    description: m[3]?.trim() || '',
+  };
+};
+
+/**
  * Registry: fromAddress substring → list of parsers to try (in order).
  * The first parser that returns a result wins.
  * Key is matched case-insensitively against the fromAddress.
@@ -208,6 +224,7 @@ const SENDER_PARSERS: { match: string; parsers: TransactionParser[] }[] = [
   { match: 'hdfcbank',  parsers: [parseHDFCCreditCard, parseHDFCRuPayUPI, parseHDFCBank] },
   { match: 'axis',      parsers: [parseAxisBank] },
   { match: 'sbicard',   parsers: [parseSBICard] },
+  { match: 'hsbc',      parsers: [parseHSBCCard] },
 ];
 
 /**
