@@ -18,6 +18,16 @@ import { ViewCapsDialog } from "@/components/dashboard/view-caps-dialog";
 import { PayCCBillDialog } from "@/components/dashboard/pay-cc-bill-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { parse, format } from 'date-fns';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // Helper function to format currency in Indian format
 const formatIndianCurrency = (amount: number): string => {
@@ -54,6 +64,8 @@ interface BankAccount {
   id: string;
   name: string;
   balance: number;
+  initialBalance?: number;
+  isActive?: boolean;
   logo: string;
 }
 
@@ -62,6 +74,9 @@ interface CreditCardAccount {
   name: string;
   usedAmount: number;
   totalLimit: number;
+  availableCredit?: number;
+  rewardPoints?: number;
+  isActive?: boolean;
   logo: string;
 }
 
@@ -146,6 +161,10 @@ export default function DashboardPage() {
   const [apiBankAccounts, setApiBankAccounts] = useState<BankAccount[]>([]);
   const [isBankDetailsLoading, setIsBankDetailsLoading] = useState<boolean>(true);
   const [bankDetailsError, setBankDetailsError] = useState<string | null>(null);
+  const [bankDetailsEndpoint, setBankDetailsEndpoint] = useState<string | null>(null);
+  const [bankDetailsServerDomain, setBankDetailsServerDomain] = useState('');
+  const [bankDetailsEndpointError, setBankDetailsEndpointError] = useState<string | null>(null);
+  const [isBankDetailsEndpointDialogOpen, setIsBankDetailsEndpointDialogOpen] = useState(true);
 
   // Credit Card Details State
   const [apiCreditCards, setApiCreditCards] = useState<CreditCardAccount[]>([]);
@@ -240,44 +259,47 @@ export default function DashboardPage() {
   const availableYears = useMemo(() => getAvailableYears(), []);
   
   // --- Data Fetching Functions ---
+  // Single request returns bank accounts, credit card accounts, and investment accounts together.
   const fetchBankDetails = useCallback(async () => {
+      if (!bankDetailsEndpoint) return;
+
       setIsBankDetailsLoading(true); setBankDetailsError(null);
+      setIsCreditCardDetailsLoading(true); setCreditCardDetailsError(null);
       try {
-        const res = await fetch('/api/bank-details');
+        const res = await fetch(bankDetailsEndpoint);
         if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
         const data = await res.json();
         setApiBankAccounts(data.bankAccounts || []);
+        setApiCreditCards(data.creditCardAccounts || []);
+        setInvestmentCategories(data.investmentAccounts || []);
       } catch (error) {
-        setBankDetailsError(error instanceof Error ? error.message : "An unknown error occurred");
+        const message = error instanceof Error ? error.message : "An unknown error occurred";
+        setBankDetailsError(message);
+        setCreditCardDetailsError(message);
       } finally {
         setIsBankDetailsLoading(false);
+        setIsCreditCardDetailsLoading(false);
       }
-  }, []);
+  }, [bankDetailsEndpoint]);
 
-  const fetchCreditCardDetails = useCallback(async () => {
-      setIsCreditCardDetailsLoading(true); setCreditCardDetailsError(null);
-      try {
-          const res = await fetch('/api/credit-card-details');
-          if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
-          const data = await res.json();
-          setApiCreditCards(data.creditCardDetails || []);
-      } catch (error) {
-          setCreditCardDetailsError(error instanceof Error ? error.message : "An unknown error occurred");
-      } finally {
-          setIsCreditCardDetailsLoading(false);
-      }
-  }, []);
+  const handleBankDetailsEndpointSubmit = () => {
+    const serverDomain = bankDetailsServerDomain.trim();
 
-  const fetchInvestmentAccounts = useCallback(async () => {
-      try {
-          const res = await fetch('/api/investment-accounts');
-          if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
-          const data = await res.json();
-          setInvestmentCategories(data || []);
-      } catch (error) {
-          console.error('Error fetching investment accounts:', error);
+    try {
+      const url = new URL(serverDomain);
+      const isHttpEndpoint = url.protocol === 'http:' || url.protocol === 'https:';
+
+      if (!isHttpEndpoint || url.pathname !== '/' || url.search || url.hash) {
+        throw new Error('Enter an HTTP(S) server domain only.');
       }
-  }, []);
+
+      setBankDetailsEndpoint(new URL('/api/bank-details', url.origin).toString());
+      setBankDetailsEndpointError(null);
+      setIsBankDetailsEndpointDialogOpen(false);
+    } catch {
+      setBankDetailsEndpointError('Enter a valid HTTP(S) server domain without a path.');
+    }
+  };
 
   const calculateXIRRForCategory = useCallback(async (categoryId: string): Promise<number | undefined> => {
     try {
@@ -472,9 +494,7 @@ export default function DashboardPage() {
   // --- Data Fetching Effects ---
   useEffect(() => {
     fetchBankDetails();
-    fetchCreditCardDetails();
-    fetchInvestmentAccounts();
-  }, [fetchBankDetails, fetchCreditCardDetails, fetchInvestmentAccounts]);
+  }, [fetchBankDetails]);
   
   useEffect(() => {
     fetchExpenses(selectedExpenseMonth, selectedExpenseYear);
@@ -700,7 +720,6 @@ export default function DashboardPage() {
         });
         await refetchCurrentTransactions();
         fetchBankDetails();
-        fetchCreditCardDetails();
       } else {
         toast({
           variant: "destructive",
@@ -718,13 +737,12 @@ export default function DashboardPage() {
     } finally {
       setIsDeletingTransaction(false);
     }
-  }, [refetchCurrentTransactions, fetchBankDetails, fetchCreditCardDetails, toast]);
+  }, [refetchCurrentTransactions, fetchBankDetails, toast]);
 
   // Callback when a transaction is updated/created from the TransactionDialog edit/duplicate dialogs
   const handleTxDialogTransactionUpdated = useCallback(async () => {
     await refetchCurrentTransactions();
     fetchBankDetails();
-    fetchCreditCardDetails();
     // Close all edit/duplicate dialogs
     setTxDialogEditExpenseOpen(false);
     setTxDialogEditExpenseData(null);
@@ -738,7 +756,7 @@ export default function DashboardPage() {
     setTxDialogEditInvestmentData(null);
     setTxDialogDuplicateInvestmentOpen(false);
     setTxDialogDuplicateInvestmentData(null);
-  }, [refetchCurrentTransactions, fetchBankDetails, fetchCreditCardDetails]);
+  }, [refetchCurrentTransactions, fetchBankDetails]);
 
   // Combined accounts for edit/duplicate dialogs
   const combinedAccountsForTxDialog = useMemo(() => [
@@ -880,6 +898,32 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col min-h-screen w-full">
+      <Dialog open={isBankDetailsEndpointDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Server domain</DialogTitle>
+            <DialogDescription>
+              Enter the server domain used to load bank, credit card, and investment accounts.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            aria-label="Server domain"
+            autoFocus
+            value={bankDetailsServerDomain}
+            onChange={(event) => setBankDetailsServerDomain(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') handleBankDetailsEndpointSubmit();
+            }}
+            placeholder="https://api.example.com"
+          />
+          {bankDetailsEndpointError && (
+            <p className="text-sm text-destructive">{bankDetailsEndpointError}</p>
+          )}
+          <DialogFooter>
+            <Button onClick={handleBankDetailsEndpointSubmit}>Load accounts</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <DashboardHeader 
         expenseCategories={expenseCategories}
         expenseSubCategories={expenseSubCategories}
