@@ -404,7 +404,10 @@ export function AllTransactionsDialog({
         // This branch is no longer used as expense editing is handled by AddExpenseDialog
         return;
       } else if (selectedTransaction.type === 'Income') {
-        apiEndpoint = '/api/add-income';
+        const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+        apiEndpoint = configuredDomain
+          ? new URL('/api/transactions/income', configuredDomain).toString()
+          : '/api/transactions/income';
         payload = {
           id: selectedTransaction.id,
           amount: parseFloat(values.amount),
@@ -412,17 +415,20 @@ export function AllTransactionsDialog({
           subCategoryId: values.subCategory,
           accountId: values.account,
           date: format(values.date, 'yyyy-MM-dd'),
-          description: values.description,
+          notes: values.description,
         };
       } else if (selectedTransaction.type === 'Investment') {
-        apiEndpoint = '/api/add-investment';
+        const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+        apiEndpoint = configuredDomain
+          ? new URL('/api/transactions/investment', configuredDomain).toString()
+          : '/api/transactions/investment';
         payload = {
           id: selectedTransaction.id,
           amount: parseFloat(values.amount),
           investmentAccountId: values.investmentAccount,
           fromAccountId: values.account,
           date: format(values.date, 'yyyy-MM-dd'),
-          description: values.description,
+          notes: values.description,
         };
       }
 
@@ -488,27 +494,29 @@ export function AllTransactionsDialog({
           description: values.description,
         };
       } else if (selectedTransaction.type === 'Income') {
-        apiEndpoint = '/api/add-income';
-        const selectedAccount = combinedAccounts.find(acc => acc.id === values.account);
+        const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+        apiEndpoint = configuredDomain
+          ? new URL('/api/transactions/income', configuredDomain).toString()
+          : '/api/transactions/income';
         payload = {
           amount: parseFloat(values.amount),
           categoryId: values.category,
           subCategoryId: values.subCategory,
-          account: {
-            id: values.account,
-            type: selectedAccount?.type || 'Bank',
-          },
+          accountId: values.account,
           date: format(values.date, 'yyyy-MM-dd'),
-          description: values.description,
+          notes: values.description,
         };
       } else if (selectedTransaction.type === 'Investment') {
-        apiEndpoint = '/api/add-investment';
+        const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+        apiEndpoint = configuredDomain
+          ? new URL('/api/transactions/investment', configuredDomain).toString()
+          : '/api/transactions/investment';
         payload = {
           amount: parseFloat(values.amount),
           investmentAccountId: values.investmentAccount,
-          accountId: values.account,
+          fromAccountId: values.account,
           date: format(values.date, 'yyyy-MM-dd'),
-          description: values.description,
+          notes: values.description,
         };
       }
 

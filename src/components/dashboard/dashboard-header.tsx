@@ -218,6 +218,7 @@ export function DashboardHeader({
         categories={incomeCategories}
         subCategories={incomeSubCategories}
         accounts={combinedAccounts}
+        serverDomain={serverDomain}
         onIncomeAdded={onIncomeAdded}
       />
       <AddInvestmentDialog
@@ -225,6 +226,7 @@ export function DashboardHeader({
         onOpenChange={setIsAddInvestmentOpen}
         investmentCategories={investmentCategories}
         accounts={bankAccountsOnly}
+        serverDomain={serverDomain}
         onInvestmentAdded={onInvestmentAdded}
       />
       <PayCCBillDialog
@@ -255,6 +257,7 @@ export function DashboardHeader({
         open={isAddTransferOpen}
         onOpenChange={setIsAddTransferOpen}
         bankAccounts={bankAccountsOnly}
+        serverDomain={serverDomain}
         onTransferAdded={onTransferAdded}
       />
       <UnauditedExpenseDialog

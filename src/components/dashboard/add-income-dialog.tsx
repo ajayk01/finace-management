@@ -54,6 +54,7 @@ interface AddIncomeDialogProps {
   categories: Category[];
   subCategories: SubCategory[];
   accounts: Account[];
+  serverDomain?: string;
   onIncomeAdded: (newIncome: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
   editTransactionId?: string; // Optional: ID of transaction being edited
   initialValues?: Partial<IncomeFormValues>; // Optional: Initial form values for editing
@@ -84,6 +85,7 @@ export function AddIncomeDialog({
   categories, 
   subCategories, 
   accounts, 
+  serverDomain,
   onIncomeAdded,
   editTransactionId,
   initialValues 
@@ -172,14 +174,14 @@ export function AddIncomeDialog({
     const payload: any = {
         amount: values.amount,
         date: format(values.date, 'yyyy-MM-dd') + 'T' + values.time,
-        description: values.description,
-        account: {
-            id: values.accountId,
-            type: selectedAccount.type,
-        },
+        notes: values.description,
+        accountId: values.accountId,
         categoryId: values.categoryId,
-        subCategoryId: values.subCategoryId,
     };
+
+    if (values.subCategoryId) {
+        payload.subCategoryId = values.subCategoryId;
+    }
     
     // Add transaction ID if editing
     if (isEditMode && editTransactionId) {
@@ -187,7 +189,12 @@ export function AddIncomeDialog({
     }
 
     try {
-        const response = await fetch('/api/add-income', {
+        const configuredDomain = serverDomain || window.localStorage.getItem('finance-server-domain') || '';
+        const incomeUrl = configuredDomain
+          ? new URL('/api/transactions/income', configuredDomain).toString()
+          : '/api/transactions/income';
+
+        const response = await fetch(incomeUrl, {
             method: isEditMode ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),

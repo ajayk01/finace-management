@@ -63,6 +63,7 @@ interface AddInvestmentDialogProps {
   onOpenChange: (open: boolean) => void;
   investmentCategories: InvestmentCategory[];
   accounts: Account[];
+  serverDomain?: string;
   onInvestmentAdded: (newInvestment: Transaction, fromAccountId: string) => void;
   editTransactionId?: string;
   initialValues?: Partial<InvestmentFormValues>;
@@ -70,7 +71,7 @@ interface AddInvestmentDialogProps {
 
 export type InvestmentFormValues = z.infer<typeof investmentSchema>;
 
-export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, accounts, onInvestmentAdded, editTransactionId, initialValues }: AddInvestmentDialogProps) {
+export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, accounts, serverDomain, onInvestmentAdded, editTransactionId, initialValues }: AddInvestmentDialogProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const isEditMode = !!editTransactionId;
@@ -108,13 +109,18 @@ export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, 
     const payload = {
       amount: values.amount,
       date: format(values.date, 'yyyy-MM-dd') + 'T' + values.time,
-      description: values.description,
-      accountId: values.accountId,
+      notes: values.description,
+      fromAccountId: values.accountId,
       investmentAccountId: values.investmentAccountId,
     };
 
     try {
-      const response = await fetch(isEditMode ? '/api/all-transactions' : '/api/add-investment', {
+      const configuredDomain = serverDomain || window.localStorage.getItem('finance-server-domain') || '';
+      const investmentUrl = configuredDomain
+        ? new URL('/api/transactions/investment', configuredDomain).toString()
+        : '/api/transactions/investment';
+
+      const response = await fetch(isEditMode ? '/api/all-transactions' : investmentUrl, {
         method: isEditMode ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(isEditMode ? { id: editTransactionId, ...payload } : payload),

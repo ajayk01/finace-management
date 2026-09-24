@@ -58,6 +58,7 @@ interface AddTransferDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   bankAccounts: BankAccount[];
+  serverDomain?: string;
   onTransferAdded?: (newTransfer: Transaction, fromAccountId: string, toAccountId: string) => void;
 }
 
@@ -68,7 +69,7 @@ export interface BankAccount {
   balance?: number;
 }
 
-export function AddTransferDialog({ open, onOpenChange, bankAccounts, onTransferAdded }: AddTransferDialogProps) {
+export function AddTransferDialog({ open, onOpenChange, bankAccounts, serverDomain, onTransferAdded }: AddTransferDialogProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -90,7 +91,12 @@ export function AddTransferDialog({ open, onOpenChange, bankAccounts, onTransfer
   async function onSubmit(data: TransferFormValues) {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/add-transfer', {
+      const configuredDomain = serverDomain || window.localStorage.getItem('finance-server-domain') || '';
+      const transferUrl = configuredDomain
+        ? new URL('/api/transactions/transfer', configuredDomain).toString()
+        : '/api/transactions/transfer';
+
+      const response = await fetch(transferUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -98,9 +104,9 @@ export function AddTransferDialog({ open, onOpenChange, bankAccounts, onTransfer
         body: JSON.stringify({
           amount: data.amount,
           date: format(data.date, 'yyyy-MM-dd') + 'T' + data.time,
-          description: data.description,
-          fromAccountId: parseInt(data.fromAccountId),
-          toAccountId: parseInt(data.toAccountId),
+          notes: data.description,
+          fromAccountId: data.fromAccountId,
+          toAccountId: data.toAccountId,
         }),
       });
 
@@ -110,8 +116,10 @@ export function AddTransferDialog({ open, onOpenChange, bankAccounts, onTransfer
         throw new Error(result.error || 'Failed to add transfer');
       }
 
+      const transferId = result?.transactionId ?? result?.id ?? Date.now().toString();
+
       const newTransfer: Transaction = {
-        id: result.transactionId.toString(),
+        id: String(transferId),
         amount: data.amount,
         date: format(data.date, 'yyyy-MM-dd'),
         description: data.description,
