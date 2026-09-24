@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { PlusCircle, ChevronDown, Bell } from "lucide-react";
 import {
   DropdownMenu,
@@ -31,7 +32,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -62,6 +62,9 @@ interface DashboardHeaderProps {
   investmentCategories: InvestmentCategory[];
   bankAccounts: Account[];
   creditCards: Account[];
+  serverDomain?: string;
+  onServerDomainChange?: (value: string) => void;
+  onServerDomainApply?: () => void;
   onExpenseAdded: (newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
   onIncomeAdded: (newIncome: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => void;
   onInvestmentAdded: (newInvestment: Transaction, fromAccountId: string) => void;
@@ -78,6 +81,9 @@ export function DashboardHeader({
     investmentCategories,
     bankAccounts, 
     creditCards,
+    serverDomain = '',
+    onServerDomainChange,
+    onServerDomainApply,
     onExpenseAdded,
     onIncomeAdded,
     onInvestmentAdded,
@@ -101,11 +107,18 @@ export function DashboardHeader({
 
   const [selectedCreditCardForCap, setSelectedCreditCardForCap] = useState<string>('');
   const [splitwiseGroups, setSplitwiseGroups] = useState<SplitwiseGroup[]>([]);
+  const [serverInput, setServerInput] = useState(serverDomain);
+
+  useEffect(() => {
+    setServerInput(serverDomain);
+  }, [serverDomain]);
 
   useEffect(() => {
     async function fetchSplitwiseGroups() {
         try {
-            const res = await fetch('/api/splitwise');
+            const configuredDomain = serverDomain || window.localStorage.getItem('finance-server-domain') || '';
+            const splitwiseUrl = configuredDomain ? new URL('/api/splitwise', configuredDomain).toString() : '/api/splitwise';
+            const res = await fetch(splitwiseUrl);
             const data = await res.json();
             if (res.ok) {
                 setSplitwiseGroups(data.groups || []);
@@ -117,7 +130,7 @@ export function DashboardHeader({
         }
     }
     fetchSplitwiseGroups();
-  }, [toast]);
+  }, [serverDomain, toast]);
 
   const combinedAccounts = [
     ...bankAccounts.map(acc => ({ ...acc, type: "Bank" as const })),
@@ -131,6 +144,26 @@ export function DashboardHeader({
       <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
         <h1 className="text-xl font-semibold md:text-2xl">Financial Dashboard</h1>
         <div className="ml-auto flex items-center gap-2 md:gap-3">
+            <div className="hidden md:flex items-center gap-2 rounded-md border bg-background px-2 py-1.5">
+              <Input
+                value={serverInput}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setServerInput(value);
+                  onServerDomainChange?.(value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    onServerDomainApply?.();
+                  }
+                }}
+                placeholder="https://server.example.com"
+                className="h-8 w-40 md:w-56 border-0 bg-transparent shadow-none focus-visible:ring-0"
+              />
+              <Button variant="outline" size="sm" onClick={onServerDomainApply} className="h-8">
+                Use
+              </Button>
+            </div>
             <Button variant="outline" size="sm" onClick={() => setIsAddExpenseOpen(true)}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Add Expense
@@ -177,6 +210,7 @@ export function DashboardHeader({
         subCategories={expenseSubCategories}
         accounts={combinedAccounts}
         onExpenseAdded={onExpenseAdded}
+        serverDomain={serverDomain}
       />
        <AddIncomeDialog 
         open={isAddIncomeOpen} 

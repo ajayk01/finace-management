@@ -47,7 +47,9 @@ export function ViewCapsDialog({
   const fetchCaps = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/credit-card-caps?creditCardId=${creditCardId}`);
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const capsUrl = configuredDomain ? new URL(`/api/credit-card-caps?creditCardId=${creditCardId}`, configuredDomain).toString() : `/api/credit-card-caps?creditCardId=${creditCardId}`;
+      const response = await fetch(capsUrl);
       if (!response.ok) {
         throw new Error('Failed to fetch caps');
       }

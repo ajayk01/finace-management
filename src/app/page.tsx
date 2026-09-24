@@ -52,6 +52,8 @@ const monthOptions = [
   { value: "dec", label: "December" },
 ];
 
+const SERVER_DOMAIN_STORAGE_KEY = 'finance-server-domain';
+
 interface ExpenseItem { // Reused for income and investments as structure is similar
   year: number;
   month: string;
@@ -162,9 +164,10 @@ export default function DashboardPage() {
   const [isBankDetailsLoading, setIsBankDetailsLoading] = useState<boolean>(true);
   const [bankDetailsError, setBankDetailsError] = useState<string | null>(null);
   const [bankDetailsEndpoint, setBankDetailsEndpoint] = useState<string | null>(null);
+  const [serverOrigin, setServerOrigin] = useState<string | null>(null);
   const [bankDetailsServerDomain, setBankDetailsServerDomain] = useState('');
   const [bankDetailsEndpointError, setBankDetailsEndpointError] = useState<string | null>(null);
-  const [isBankDetailsEndpointDialogOpen, setIsBankDetailsEndpointDialogOpen] = useState(true);
+  const [isBankDetailsEndpointDialogOpen, setIsBankDetailsEndpointDialogOpen] = useState(false);
 
   // Credit Card Details State
   const [apiCreditCards, setApiCreditCards] = useState<CreditCardAccount[]>([]);
@@ -174,6 +177,7 @@ export default function DashboardPage() {
   // Expenses State
   const [rawMonthlyExpenses, setRawMonthlyExpenses] = useState<Transaction[]>([]);
   const [monthlyExpenses, setMonthlyExpenses] = useState<ExpenseItem[]>([]);
+  const [unsettledSplitwiseExpense, setUnsettledSplitwiseExpense] = useState<number>(0);
   const [isExpensesLoading, setIsExpensesLoading] = useState<boolean>(true);
   const [expensesError, setExpensesError] = useState<string | null>(null);
   const [selectedExpenseMonth, setSelectedExpenseMonth] = useState<string>(currentMonthValue);
@@ -257,6 +261,35 @@ export default function DashboardPage() {
   const [selectedCreditCardForPayment, setSelectedCreditCardForPayment] = useState<string | undefined>(undefined);
   
   const availableYears = useMemo(() => getAvailableYears(), []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const savedDomain = window.localStorage.getItem(SERVER_DOMAIN_STORAGE_KEY);
+    if (!savedDomain) {
+      setBankDetailsServerDomain('');
+      return;
+    }
+
+    setBankDetailsServerDomain(savedDomain);
+
+    try {
+      const url = new URL(savedDomain);
+      const isHttpEndpoint = url.protocol === 'http:' || url.protocol === 'https:';
+      if (!isHttpEndpoint || url.pathname !== '/' || url.search || url.hash) {
+        throw new Error('Invalid persisted server domain');
+      }
+
+      setBankDetailsEndpoint(new URL('/api/bank-details', url.origin).toString());
+      setServerOrigin(url.origin);
+      setBankDetailsEndpointError(null);
+      setIsBankDetailsEndpointDialogOpen(false);
+    } catch {
+      window.localStorage.removeItem(SERVER_DOMAIN_STORAGE_KEY);
+      setBankDetailsServerDomain('');
+      setIsBankDetailsEndpointDialogOpen(false);
+    }
+  }, []);
   
   // --- Data Fetching Functions ---
   // Single request returns bank accounts, credit card accounts, and investment accounts together.
@@ -293,7 +326,12 @@ export default function DashboardPage() {
         throw new Error('Enter an HTTP(S) server domain only.');
       }
 
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(SERVER_DOMAIN_STORAGE_KEY, url.origin);
+      }
+
       setBankDetailsEndpoint(new URL('/api/bank-details', url.origin).toString());
+      setServerOrigin(url.origin);
       setBankDetailsEndpointError(null);
       setIsBankDetailsEndpointDialogOpen(false);
     } catch {
@@ -346,10 +384,13 @@ export default function DashboardPage() {
   }, []);
   
   const fetchExpenses = useCallback(async (month: string, year: number) => {
+    if (!serverOrigin) return;
+
     const cacheKey = `expenses-${year}-${month}`;
     if (dataCache.current[cacheKey]) {
         setRawMonthlyExpenses(dataCache.current[cacheKey].rawTransactions);
         setMonthlyExpenses(dataCache.current[cacheKey].monthlyExpenses);
+        setUnsettledSplitwiseExpense(dataCache.current[cacheKey].totalUnsettledSplitwiseExpense || 0);
         setExpenseCategories(dataCache.current[cacheKey].categories);
         setExpenseSubCategories(dataCache.current[cacheKey].subCategories);
         setIsExpensesLoading(false);
@@ -357,25 +398,27 @@ export default function DashboardPage() {
     }
     setIsExpensesLoading(true); setExpensesError(null);
     try {
-      const res = await fetch(`/api/monthly-expenses?month=${month}&year=${year}`);
+      const res = await fetch(`${serverOrigin}/api/monthly-expenses?month=${month}&year=${year}`);
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
       const data = await res.json();
       const rawTransactions = data.rawTransactions || [];
       const monthlyExpensesData = data.monthlyExpenses || [];
+      const totalUnsettledSplitwiseExpense = Number(data.totalUnsettledSplitwiseExpense) || 0;
       const categories = data.categories || [];
       const subCategories = data.subCategories || [];
       setExpenseCategories(categories);
       setExpenseSubCategories(subCategories);
       setRawMonthlyExpenses(rawTransactions);
       setMonthlyExpenses(monthlyExpensesData);
+      setUnsettledSplitwiseExpense(totalUnsettledSplitwiseExpense);
       setExcludedExpenseIds(new Set()); // Reset on month change
-      dataCache.current[cacheKey] = { rawTransactions, monthlyExpenses: monthlyExpensesData, categories, subCategories };
+      dataCache.current[cacheKey] = { rawTransactions, monthlyExpenses: monthlyExpensesData, totalUnsettledSplitwiseExpense, categories, subCategories };
     } catch (error) {
       setExpensesError(error instanceof Error ? error.message : "An unknown error occurred");
     } finally {
       setIsExpensesLoading(false);
     }
-  }, []);
+  }, [serverOrigin]);
   
   const fetchIncome = useCallback(async (month: string, year: number) => {
       const cacheKey = `income-${year}-${month}`;
@@ -814,14 +857,10 @@ export default function DashboardPage() {
   }, [expenseCategories, expenseSubCategories]);
 
   const apiMonthlyExpenses = useMemo(() => {
-    // Use server-calculated monthlyExpenses (includes splitwise adjustments)
-    // Only recalculate if user has excluded specific transactions
-    if (excludedExpenseIds.size > 0) {
-      const filteredTransactions = rawMonthlyExpenses.filter(tx => !excludedExpenseIds.has(tx.id));
-      return groupTransactions(filteredTransactions, selectedExpenseMonth, selectedExpenseYear);
-    }
+    // Use the server-grouped monthly expenses as the chart/table source.
+    // This prevents refund/cancel rows in rawTransactions from creating negative totals.
     return monthlyExpenses;
-  }, [monthlyExpenses, rawMonthlyExpenses, excludedExpenseIds, selectedExpenseMonth, selectedExpenseYear]);
+  }, [monthlyExpenses]);
   
   const apiMonthlyIncome = useMemo(() => {
     if (!rawMonthlyIncome) return [];
@@ -898,32 +937,6 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col min-h-screen w-full">
-      <Dialog open={isBankDetailsEndpointDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Server domain</DialogTitle>
-            <DialogDescription>
-              Enter the server domain used to load bank, credit card, and investment accounts.
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            aria-label="Server domain"
-            autoFocus
-            value={bankDetailsServerDomain}
-            onChange={(event) => setBankDetailsServerDomain(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') handleBankDetailsEndpointSubmit();
-            }}
-            placeholder="https://api.example.com"
-          />
-          {bankDetailsEndpointError && (
-            <p className="text-sm text-destructive">{bankDetailsEndpointError}</p>
-          )}
-          <DialogFooter>
-            <Button onClick={handleBankDetailsEndpointSubmit}>Load accounts</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <DashboardHeader 
         expenseCategories={expenseCategories}
         expenseSubCategories={expenseSubCategories}
@@ -943,6 +956,9 @@ export default function DashboardPage() {
           usedAmount: card.usedAmount,
           totalLimit: card.totalLimit
         }))}
+        serverDomain={bankDetailsServerDomain}
+        onServerDomainChange={setBankDetailsServerDomain}
+        onServerDomainApply={handleBankDetailsEndpointSubmit}
         onExpenseAdded={handleExpenseAdded}
         onIncomeAdded={handleIncomeAdded}
         onInvestmentAdded={handleInvestmentAdded}
@@ -957,7 +973,12 @@ export default function DashboardPage() {
       <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 overflow-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div>
-            <h2 className="text-xl font-semibold mb-3">Bank Details</h2>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold">Bank Details</h2>
+              <Button variant="outline" size="sm" onClick={() => setIsBankDetailsEndpointDialogOpen(true)}>
+                Change server
+              </Button>
+            </div>
             <div className="bg-muted p-4 rounded-lg shadow-md">
               {isBankDetailsLoading && <p className="text-center text-muted-foreground">Loading bank details...</p>}
               {renderError(bankDetailsError, "bank details")}
@@ -1015,6 +1036,7 @@ export default function DashboardPage() {
                       years={availableYears} 
                       data={apiMonthlyExpenses}
                       showSubCategoryColumn={true}
+                      unsettledSplitwiseAmount={unsettledSplitwiseExpense}
                       onViewTransactions={() => handleViewMonthlyTransactions(
                         `${monthOptions.find(m => m.value === selectedExpenseMonth)?.label} ${selectedExpenseYear} Expenses`,
                         rawMonthlyExpenses,

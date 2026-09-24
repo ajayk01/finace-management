@@ -138,12 +138,14 @@ interface ExpensePieChartProps {
   data: PieChartDataItem[];
   chartTitle?: string;
   chartDescription?: string;
+  totalOverride?: number;
 }
 
 export function ExpensePieChart({ 
   data, 
   chartTitle = "Selected Month expense", 
-  chartDescription = "Breakdown By Category" 
+  chartDescription = "Breakdown By Category",
+  totalOverride,
 }: ExpensePieChartProps) {
   
   const chartData = React.useMemo(() => {
@@ -178,7 +180,7 @@ export function ExpensePieChart({
     [chartData]
   );
 
-  const totalAmount = chartData.reduce((sum, entry) => sum + entry.value, 0);
+  const totalAmount = totalOverride !== undefined ? totalOverride : chartData.reduce((sum, entry) => sum + entry.value, 0);
 
   const renderLabel = React.useCallback(
     ({ cx, cy, midAngle, outerRadius: or, index, value, name, fill }: any) => {

@@ -57,6 +57,7 @@ interface ExpenseBreakdownTableProps {
   hasXirrBeenCalculated?: boolean; // Add state to track if XIRR has been calculated
   onViewTransactions?: () => void;
   onOpenCalculators?: () => void;
+  unsettledSplitwiseAmount?: number;
 }
 
 interface CategorizedExpenseGroup {
@@ -90,6 +91,7 @@ export function ExpenseBreakdownTable({
   hasXirrBeenCalculated = false,
   onViewTransactions,
   onOpenCalculators,
+  unsettledSplitwiseAmount = 0,
 }: ExpenseBreakdownTableProps) {
 
   const [viewMode, setViewMode] = React.useState<'table' | 'chart'>('chart');
@@ -146,6 +148,8 @@ export function ExpenseBreakdownTable({
           value: group.categoryTotal,
       }));
   }, [categorizedData, viewMode]);
+
+  const netGrandTotal = grandTotal;
 
   const showSelectors = selectedMonth && onMonthChange && months && selectedYear !== undefined && onYearChange && years;
 
@@ -273,10 +277,19 @@ export function ExpenseBreakdownTable({
             </TableBody>
             {categorizedData.length > 0 && (
               <TableFooter>
+                {unsettledSplitwiseAmount > 0 && (
+                  <TableRow className="bg-muted/50">
+                    <TableCell colSpan={showSubCategoryColumn ? 2 : 1} className="text-right py-2 px-4 text-sm text-muted-foreground">Less: Unsettled Splitwise</TableCell>
+                    <TableCell className="text-right py-2 px-4 text-sm text-muted-foreground">
+                      -₹{unsettledSplitwiseAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </TableCell>
+                    {showXirrColumn && <TableCell className="py-2 px-4"></TableCell>}
+                  </TableRow>
+                )}
                 <TableRow className="bg-card font-bold text-base">
                   <TableCell colSpan={showSubCategoryColumn ? 2 : 1} className="text-right py-3 px-4">Grand Total</TableCell>
                   <TableCell className={cn("text-right py-3 px-4", grandTotalTextColorClassName)}>
-                    ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ₹{netGrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                   {showXirrColumn && <TableCell className="py-3 px-4"></TableCell>}
                 </TableRow>
@@ -284,7 +297,12 @@ export function ExpenseBreakdownTable({
             )}
           </Table>
         ) : (
-            <ExpensePieChart data={pieChartData} chartTitle="" chartDescription="" />
+            <ExpensePieChart
+              data={pieChartData}
+              chartTitle=""
+              chartDescription=""
+              totalOverride={grandTotal}
+            />
         )}
       </CardContent>
     </Card>

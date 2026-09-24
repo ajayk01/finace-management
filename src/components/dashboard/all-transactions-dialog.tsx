@@ -471,7 +471,10 @@ export function AllTransactionsDialog({
       let payload: any = {};
 
       if (selectedTransaction.type === 'Expense') {
-        apiEndpoint = '/api/add-expense';
+        const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+        apiEndpoint = configuredDomain
+          ? new URL('/api/transactions/expense', configuredDomain).toString()
+          : '/api/transactions/expense';
         const selectedAccount = combinedAccounts.find(acc => acc.id === values.account);
         payload = {
           amount: parseFloat(values.amount),

@@ -40,31 +40,15 @@ export async function GET(request: Request) {
 
         const { groups } = await fetchSplitwise('get_groups', cookie);
 
-        const groupsWithMembers = await Promise.all(
-            (groups || []).map(async (group: any) => {
-                const groupDetails = await fetchSplitwise(`get_group/${group.id}`, cookie);
-                const members = groupDetails.group.members.map((member: any) => ({
-                    id: member.id.toString(),
-                    friendId: splitwiseFriendIdToDbId.get(member.id.toString()) ?? null,
-                    name: `${member.first_name} ${member.last_name || ''}`.trim(),
-                }));
-                return {
-                    id: group.id.toString(),
-                    name: group.name,
-                    members: members,
-                };
-            })
-        );
-        //console.log('Fetched groups with members:', groupsWithMembers);
-        // Create a map with user ID vs name for all users across all groups
-        const userIdToNameMap = new Map<string, string>();
-
-        groupsWithMembers.forEach(group => {
-            group.members.forEach((member: { id: string; name: string }) => {
-                userIdToNameMap.set(member.id, member.name);
-            });
-        });
-
+        const groupsWithMembers = (groups || []).map((group: any) => ({
+            id: group.id.toString(),
+            name: group.name,
+            members: (group.members || []).map((member: any) => ({
+                id: member.id.toString(),
+                friendId: splitwiseFriendIdToDbId.get(member.id.toString()) ?? null,
+                name: `${member.first_name} ${member.last_name || ''}`.trim(),
+            })),
+        }));
 
         return NextResponse.json({ groups: groupsWithMembers });
 

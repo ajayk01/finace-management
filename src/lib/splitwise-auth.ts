@@ -5,12 +5,12 @@ const SPLITWISE_CSRF_TOKEN_HEADER = "x-splitwise-csrf-token";
 
 export function getSplitwiseCookie(request: Request): string | null {
   const cookie = request.headers.get(SPLITWISE_COOKIE_HEADER)?.trim();
-  return cookie || null;
+  return cookie || process.env.SPLITWISE_COOKIE?.trim() || null;
 }
 
 export function getSplitwiseCsrfToken(request: Request): string | null {
   const csrfToken = request.headers.get(SPLITWISE_CSRF_TOKEN_HEADER)?.trim();
-  return csrfToken || null;
+  return csrfToken || process.env.SPLITWISE_CSRF_TOKEN?.trim() || null;
 }
 
 export function missingSplitwiseCookieResponse() {
