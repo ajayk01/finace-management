@@ -217,11 +217,14 @@ export function AllTransactionsDialog({
 
     setIsBulkDeleting(true);
     try {
-      const res = await fetch('/api/all-transactions', {
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const deleteUrl = configuredDomain
+        ? new URL('/api/delete-transactions', configuredDomain).toString()
+        : '/api/delete-transactions';
+      const res = await fetch(deleteUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'bulk-delete',
           ids: Array.from(selectedIds).map(Number),
         }),
       });
@@ -260,7 +263,16 @@ export function AllTransactionsDialog({
     setIsLoading(true);
     setSelectedIds(new Set());
     try {
-      const res = await fetch(`/api/all-transactions?month=${selectedMonth}&year=${selectedYear}`);
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      if (!configuredDomain) {
+        return;
+      }
+
+      const url = new URL('/api/transactions', configuredDomain);
+      url.searchParams.set('month', selectedMonth);
+      url.searchParams.set('year', String(selectedYear));
+
+      const res = await fetch(url.toString());
       const data = await res.json();
 
       if (res.ok) {
@@ -358,8 +370,14 @@ export function AllTransactionsDialog({
 
     setIsSaving(true);
     try {
-      const res = await fetch(`/api/all-transactions?id=${selectedTransaction.id}`, {
-        method: 'DELETE',
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const deleteUrl = configuredDomain
+        ? new URL('/api/delete-transactions', configuredDomain).toString()
+        : '/api/delete-transactions';
+      const res = await fetch(deleteUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [parseInt(selectedTransaction.id, 10)] }),
       });
 
       const data = await res.json();

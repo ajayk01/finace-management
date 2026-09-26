@@ -120,7 +120,7 @@ export function AddInvestmentDialog({ open, onOpenChange, investmentCategories, 
         ? new URL('/api/transactions/investment', configuredDomain).toString()
         : '/api/transactions/investment';
 
-      const response = await fetch(isEditMode ? '/api/all-transactions' : investmentUrl, {
+      const response = await fetch(isEditMode ? '/api/transactions' : investmentUrl, {
         method: isEditMode ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(isEditMode ? { id: editTransactionId, ...payload } : payload),

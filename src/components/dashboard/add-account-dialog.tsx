@@ -59,9 +59,10 @@ interface AddAccountDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAccountAdded?: () => void;
+  serverDomain?: string;
 }
 
-export function AddAccountDialog({ open, onOpenChange, onAccountAdded }: AddAccountDialogProps) {
+export function AddAccountDialog({ open, onOpenChange, onAccountAdded, serverDomain = '' }: AddAccountDialogProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -80,7 +81,12 @@ export function AddAccountDialog({ open, onOpenChange, onAccountAdded }: AddAcco
   async function onSubmit(data: AccountFormValues) {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/accounts', {
+      const configuredDomain = serverDomain || window.localStorage.getItem('finance-server-domain') || '';
+      const accountUrl = configuredDomain
+        ? new URL('/api/addAccount', configuredDomain).toString()
+        : '/api/addAccount';
+
+      const response = await fetch(accountUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -206,9 +206,11 @@ export default function SplitwisePage() {
       setIsLoading(true);
       setError(null);
       try {
-        const url = forceRefresh
-          ? "/api/friends-balance?refresh=true"
-          : "/api/friends-balance";
+        const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+        const baseUrl = '/api/friends-balance' + (forceRefresh ? '?refresh=true' : '');
+        const url = configuredDomain
+          ? new URL(baseUrl, configuredDomain).toString()
+          : baseUrl;
         const res = await fetch(url, { headers: splitwiseHeaders });
         if (!res.ok) throw new Error("Failed to fetch friends balance");
         const data = await res.json();
@@ -242,7 +244,12 @@ export default function SplitwisePage() {
 
   const fetchCategories = useCallback(async () => {
     try {
-      const res = await fetch("/api/categories?type=expense");
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const categoryUrl = configuredDomain
+        ? new URL('/api/categories?type=expense', configuredDomain).toString()
+        : '/api/categories?type=expense';
+
+      const res = await fetch(categoryUrl);
       if (!res.ok) throw new Error("Failed to fetch categories");
       const data = await res.json();
       const cats = (data.categories || []).map((cat: any) => ({

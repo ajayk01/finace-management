@@ -134,7 +134,12 @@ export function PayCCBillDialog({
         throw new Error("Payment amount cannot exceed credit card used amount");
       }
 
-      const response = await fetch('/api/pay-cc-bill', {
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const paymentUrl = configuredDomain
+        ? new URL('/api/pay-cc-bill', configuredDomain).toString()
+        : '/api/pay-cc-bill';
+
+      const response = await fetch(paymentUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

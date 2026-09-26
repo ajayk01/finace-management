@@ -95,7 +95,11 @@ export function UnauditedExpenseDialog({
     const fetchUnaudited = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch("/api/unaudited-expenses");
+        const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+        const unauditedUrl = configuredDomain
+          ? new URL('/api/unaudited-expenses', configuredDomain).toString()
+          : '/api/unaudited-expenses';
+        const res = await fetch(unauditedUrl);
         const data = await res.json();
 
         if (!res.ok) {
@@ -180,16 +184,24 @@ export function UnauditedExpenseDialog({
 
     setIsBulkSaving(true);
     try {
-      const res = await fetch("/api/unaudited-expenses", {
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const unauditedUrl = configuredDomain
+        ? new URL('/api/unaudited-expenses', configuredDomain).toString()
+        : '/api/unaudited-expenses';
+      const res = await fetch(unauditedUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          updates: selectedTransactions.map((t) => ({
-            id: t.id,
-            categoryId: t.categoryId,
-            subCategoryId: t.subCategoryId,
-            description: t.description,
-          })),
+          updates: selectedTransactions.map((t) => {
+            const catId = t.categoryId ? parseInt(t.categoryId, 10) : 0;
+            const subCatId = t.subCategoryId ? parseInt(t.subCategoryId, 10) : null;
+            return {
+              id: parseInt(t.id, 10),
+              categoryId: catId,
+              subCategoryId: subCatId,
+              description: t.description || '',
+            };
+          }),
         }),
       });
 
@@ -235,8 +247,12 @@ export function UnauditedExpenseDialog({
 
     setIsBulkDeleting(true);
     try {
-      const ids = selectedTransactions.map((t) => t.id);
-      const res = await fetch("/api/unaudited-expenses", {
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const unauditedUrl = configuredDomain
+        ? new URL('/api/unaudited-expenses', configuredDomain).toString()
+        : '/api/unaudited-expenses';
+      const ids = selectedTransactions.map((t) => parseInt(t.id, 10));
+      const res = await fetch(unauditedUrl, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids }),
@@ -248,7 +264,7 @@ export function UnauditedExpenseDialog({
       }
 
       const deletedIds = new Set<string>(
-        Array.isArray(data?.deletedIds) ? (data.deletedIds as string[]) : ids
+        Array.isArray(data?.deletedIds) ? (data.deletedIds as string[]) : ids.map(id => id.toString())
       );
 
       setTransactions((prev) => prev.filter((t) => !deletedIds.has(t.id)));

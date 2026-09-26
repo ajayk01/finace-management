@@ -248,6 +248,7 @@ export function DashboardHeader({
       <AddAccountDialog
         open={isAddAccountOpen}
         onOpenChange={setIsAddAccountOpen}
+        serverDomain={serverDomain}
         onAccountAdded={() => {
           // Refresh the page data or call a callback to update accounts list
           window.location.reload();
@@ -328,8 +329,13 @@ function AddCapHeaderDialog({
     try {
       console.log('Submitting cap values:', values);
       console.log('Values type:', typeof values.creditCardId, typeof values.capTotalAmount, typeof values.capPercentage);
+
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const capsUrl = configuredDomain
+        ? new URL('/api/credit-card-caps', configuredDomain).toString()
+        : '/api/credit-card-caps';
       
-      const response = await fetch('/api/credit-card-caps', {
+      const response = await fetch(capsUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),

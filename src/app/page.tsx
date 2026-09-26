@@ -3,8 +3,6 @@
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { ExpenseBreakdownTable } from "@/components/dashboard/expense-breakdown-table";
-import { MonthlySummaryChart } from "@/components/dashboard/monthly-summary-chart";
-import { MonthlyMoneyTable, type FinancialSnapshotItem } from "@/components/dashboard/monthly-money-table";
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog"; // Import new component
 import { InvestmentCalculatorDialog } from "@/components/dashboard/investment-calculator-dialog";
 import { AddExpenseDialog } from "@/components/dashboard/add-expense-dialog";
@@ -98,13 +96,15 @@ export interface Transaction {
   investmentAccountId?: string;
   investmentAccountName?: string;
   capId?: string;
-}
-
-interface SummaryDataItem {
-    month: string;
-    expense: number;
-    income: number;
-    investment: number;
+  splitwiseGroupId?: string;
+  splitwiseUserIds?: string[];
+  splitwiseDetails?: {
+    splitwiseTransactionId: string;
+    friendId: string;
+    friendName: string;
+    splitwiseFriendId: string;
+    splitAmount: number;
+  }[];
 }
 
 const parseCurrency = (currencyStr: string): number => {
@@ -213,13 +213,6 @@ export default function DashboardPage() {
   const [isXirrLoading, setIsXirrLoading] = useState<boolean>(false);
   const [hasXirrBeenCalculated, setHasXirrBeenCalculated] = useState<boolean>(false);
 
-
-  // Summary Chart & Netflow State
-  const [apiSummaryData, setApiSummaryData] = useState<SummaryDataItem[]>([]);
-  const [isSummaryLoading, setIsSummaryLoading] = useState<boolean>(true);
-  const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [selectedSummaryYear, setSelectedSummaryYear] = useState<number>(currentYear);
-  const [selectedSummaryDetailMonth, setSelectedSummaryDetailMonth] = useState<string>(currentMonthValue);
 
   // State for transaction dialog
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState<boolean>(false);
@@ -421,6 +414,8 @@ export default function DashboardPage() {
   }, [serverOrigin]);
   
   const fetchIncome = useCallback(async (month: string, year: number) => {
+      if (!serverOrigin) return;
+
       const cacheKey = `income-${year}-${month}`;
       if (dataCache.current[cacheKey]) {
           setRawMonthlyIncome(dataCache.current[cacheKey].rawTransactions);
@@ -431,7 +426,11 @@ export default function DashboardPage() {
       }
       setIsIncomeLoading(true); setIncomeError(null);
       try {
-          const res = await fetch(`/api/monthly-income?month=${month}&year=${year}`);
+          const url = new URL('/api/monthly-income', serverOrigin);
+          url.searchParams.set('month', month);
+          url.searchParams.set('year', String(year));
+
+          const res = await fetch(url.toString());
           if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
           const data = await res.json();
           const rawTransactions = data.rawTransactions || [];
@@ -446,7 +445,7 @@ export default function DashboardPage() {
       } finally {
           setIsIncomeLoading(false);
       }
-  }, []);
+  }, [serverOrigin]);
 
   const handleExpenseAdded = useCallback((newExpense: Transaction, accountId: string, accountType: 'Bank' | 'Credit Card') => {
     // Update raw expenses if the new expense is in the currently viewed month/year
@@ -549,6 +548,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function fetchInvestments() {
+      if (!serverOrigin) return;
+
       const cacheKey = `investments-${selectedInvestmentYear}-${selectedInvestmentMonth}`;
       if (dataCache.current[cacheKey]) {
         setRawMonthlyInvestments(dataCache.current[cacheKey].rawTransactions);
@@ -557,10 +558,13 @@ export default function DashboardPage() {
       }
       setIsInvestmentsLoading(true); setInvestmentsError(null);
       try {
-        const res = await fetch(`/api/monthly-investments?month=${selectedInvestmentMonth}&year=${selectedInvestmentYear}`);
+        const url = new URL('/api/monthly-investments', serverOrigin);
+        url.searchParams.set('month', selectedInvestmentMonth);
+        url.searchParams.set('year', String(selectedInvestmentYear));
+
+        const res = await fetch(url.toString());
         if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
         const data = await res.json();
-        // Assuming the new API returns raw transactions
         const rawTransactions = data.rawTransactions || [];
         setRawMonthlyInvestments(rawTransactions);
         dataCache.current[cacheKey] = { rawTransactions };
@@ -571,16 +575,19 @@ export default function DashboardPage() {
       }
     }
     fetchInvestments();
-  }, [selectedInvestmentMonth, selectedInvestmentYear]);
+  }, [selectedInvestmentMonth, selectedInvestmentYear, serverOrigin]);
 
     useEffect(() => {
     async function fetchTotalInvestments() {
+      const configuredDomain = window.localStorage.getItem(SERVER_DOMAIN_STORAGE_KEY) || bankDetailsServerDomain || serverOrigin || '';
+      if (!configuredDomain) return;
+
       setIsTotalInvestmentsLoading(true); setTotalInvestmentsError(null);
       try {
-        const res = await fetch(`/api/total-investments`);
+        const url = new URL('/api/total-investments', configuredDomain);
+        const res = await fetch(url.toString());
         if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch total investments');
         const data = await res.json();
-        // Get raw transactions only (investment accounts fetched separately)
         const rawTransactions = data.rawTransactions || [];
         setTotalInvestments(rawTransactions);
       } catch (error) {
@@ -590,34 +597,7 @@ export default function DashboardPage() {
       }
     }
     fetchTotalInvestments();
-  }, []);
-
-  useEffect(() => {
-    async function fetchSummaryData() {
-      const cacheKey = `summary-${selectedSummaryYear}`;
-      if (dataCache.current[cacheKey]) {
-        setApiSummaryData(dataCache.current[cacheKey].summaryData);
-        setIsSummaryLoading(false);
-        return;
-      }
-      setIsSummaryLoading(true); setSummaryError(null);
-      try {
-        const res = await fetch(`/api/yearly-summary?year=${selectedSummaryYear}`);
-        if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch');
-        const data = await res.json();
-        const summary = {
-          summaryData: data.summaryData || [],
-        };
-        setApiSummaryData(summary.summaryData);
-        dataCache.current[cacheKey] = summary;
-      } catch (error) {
-        setSummaryError(error instanceof Error ? error.message : "An unknown error occurred");
-      } finally {
-        setIsSummaryLoading(false);
-      }
-    }
-    fetchSummaryData();
-  }, [selectedSummaryYear]);
+  }, [serverOrigin, bankDetailsServerDomain]);
 
   // --- Event Handlers ---
   const handleViewBankTransactions = async (account: BankAccount) => {
@@ -633,7 +613,17 @@ export default function DashboardPage() {
     setTransactionCategoryFilter('all');
 
     try {
-      const res = await fetch(`/api/bank-transactions?bankAccountId=${account.id}`);
+      const configuredDomain = window.localStorage.getItem(SERVER_DOMAIN_STORAGE_KEY) || bankDetailsServerDomain || serverOrigin || '';
+      if (!configuredDomain) {
+        throw new Error('No backend server configured.');
+      }
+
+      const url = new URL('/api/transactions', configuredDomain);
+      url.searchParams.set('month', monthOptions[new Date().getMonth()].value);
+      url.searchParams.set('year', String(new Date().getFullYear()));
+      url.searchParams.set('accountId', account.id);
+
+      const res = await fetch(url.toString());
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || 'Failed to fetch transactions');
@@ -675,7 +665,17 @@ export default function DashboardPage() {
     setTransactionCategoryFilter('all');
 
     try {
-      const res = await fetch(`/api/credit-card-transactions?creditCardId=${card.id}`);
+      const configuredDomain = window.localStorage.getItem(SERVER_DOMAIN_STORAGE_KEY) || bankDetailsServerDomain || serverOrigin || '';
+      if (!configuredDomain) {
+        throw new Error('No backend server configured.');
+      }
+
+      const url = new URL('/api/transactions', configuredDomain);
+      url.searchParams.set('month', monthOptions[new Date().getMonth()].value);
+      url.searchParams.set('year', String(new Date().getFullYear()));
+      url.searchParams.set('accountId', card.id);
+
+      const res = await fetch(url.toString());
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || 'Failed to fetch transactions');
@@ -705,10 +705,15 @@ export default function DashboardPage() {
   const refetchCurrentTransactions = useCallback(async () => {
     if (!selectedAccountId || !transactionEntityType) return;
     try {
-      const apiUrl = transactionEntityType === 'bank'
-        ? `/api/bank-transactions?bankAccountId=${selectedAccountId}`
-        : `/api/credit-card-transactions?creditCardId=${selectedAccountId}`;
-      const res = await fetch(apiUrl);
+      const configuredDomain = window.localStorage.getItem(SERVER_DOMAIN_STORAGE_KEY) || bankDetailsServerDomain || serverOrigin || '';
+      if (!configuredDomain) return;
+
+      const apiUrl = new URL('/api/transactions', configuredDomain);
+      apiUrl.searchParams.set('month', monthOptions[new Date().getMonth()].value);
+      apiUrl.searchParams.set('year', String(new Date().getFullYear()));
+      apiUrl.searchParams.set('accountId', selectedAccountId);
+
+      const res = await fetch(apiUrl.toString());
       if (res.ok) {
         const data = await res.json();
         const fetchedTransactions = data.transactions || [];
@@ -718,7 +723,7 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Error refetching transactions:", error);
     }
-  }, [selectedAccountId, transactionEntityType, transactionPage]);
+  }, [selectedAccountId, transactionEntityType, transactionPage, bankDetailsServerDomain, serverOrigin]);
 
   // Edit handler for TransactionDialog
   const handleTxDialogEdit = useCallback((tx: Transaction) => {
@@ -752,8 +757,14 @@ export default function DashboardPage() {
   const handleTxDialogDelete = useCallback(async (tx: Transaction) => {
     setIsDeletingTransaction(true);
     try {
-      const res = await fetch(`/api/all-transactions?id=${tx.id}`, {
-        method: 'DELETE',
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const deleteUrl = configuredDomain
+        ? new URL('/api/delete-transactions', configuredDomain).toString()
+        : '/api/delete-transactions';
+      const res = await fetch(deleteUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [parseInt(tx.id, 10)] }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -871,44 +882,6 @@ export default function DashboardPage() {
     if (!rawMonthlyInvestments) return [];
     return groupTransactions(rawMonthlyInvestments, selectedInvestmentMonth, selectedInvestmentYear);
   }, [rawMonthlyInvestments, selectedInvestmentMonth, selectedInvestmentYear]);
-
-  const financialSnapshotTableData = useMemo(() => {
-    const monthIndex = monthOptions.findIndex(m => m.value === selectedSummaryDetailMonth);
-    const summaryForMonth = apiSummaryData[monthIndex];
-
-    let expenseForSelectedMonth = summaryForMonth?.expense || 0;
-    // If the user is looking at the same month/year for expenses and netflow,
-    // use the dynamically calculated expense total which respects exclusions.
-    if (selectedExpenseMonth === selectedSummaryDetailMonth && selectedExpenseYear === selectedSummaryYear) {
-      expenseForSelectedMonth = apiMonthlyExpenses.reduce((total, item) => total + parseCurrency(item.expense), 0);
-    }
-    
-    const incomeForSelectedMonth = summaryForMonth?.income || 0;
-    
-    // Similarly, use dynamically calculated investment total if viewing the same period
-    let investmentForSelectedMonth = summaryForMonth?.investment || 0;
-    if (selectedInvestmentMonth === selectedSummaryDetailMonth && selectedInvestmentYear === selectedSummaryYear) {
-      investmentForSelectedMonth = apiMonthlyInvestments.reduce((total, item) => total + parseCurrency(item.expense), 0);
-    }
-
-
-    const netFlows = incomeForSelectedMonth - expenseForSelectedMonth - investmentForSelectedMonth;
-    
-    let netFlowsColorClass = "text-foreground";
-    if (netFlows > 0) netFlowsColorClass = "text-green-600";
-    else if (netFlows < 0) netFlowsColorClass = "text-red-600";
-
-    const hdfcAccount = apiBankAccounts.find(acc => acc.name.toLowerCase().includes('hdfc'));
-    const hdfcBankBalance = hdfcAccount?.balance || 0;
-
-    return [
-      { category: "Total Expense", amount: expenseForSelectedMonth, colorClassName: "text-red-600 font-medium" },
-      { category: "Total Income", amount: incomeForSelectedMonth, colorClassName: "text-green-600 font-medium" },
-      { category: "Total Investment", amount: investmentForSelectedMonth, colorClassName: "text-primary font-medium" },
-      { category: "HDFC Bank Balance", amount: hdfcBankBalance, colorClassName: "text-foreground font-medium" },
-      { category: "Total Netflows", amount: netFlows, colorClassName: `${netFlowsColorClass} font-medium` },
-    ] as FinancialSnapshotItem[];
-  }, [selectedSummaryDetailMonth, apiSummaryData, apiBankAccounts, apiMonthlyExpenses, apiMonthlyInvestments, selectedExpenseMonth, selectedExpenseYear, selectedInvestmentMonth, selectedInvestmentYear, selectedSummaryYear]);
 
   useEffect(() => {
     const filteredSource = transactionCategoryFilter === 'all'
@@ -1136,24 +1109,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="mt-8 grid grid-cols-1 lg:grid-cols-10 gap-6">
-          <div className="lg:col-span-7">
-            <h2 className="text-xl font-semibold mb-4">Monthly Financial Summary Chart</h2>
-            {isSummaryLoading && <p className="text-muted-foreground py-4">Loading summary data...</p>}
-            {renderError(summaryError, "summary data")}
-            {!isSummaryLoading && !summaryError && (
-              <MonthlySummaryChart data={apiSummaryData} selectedYear={selectedSummaryYear} onYearChange={setSelectedSummaryYear} years={availableYears} />
-            )}
-          </div>
-          <div className="lg:col-span-3">
-            <h2 className="text-xl font-semibold mb-4">Month Netflow</h2>
-            {isSummaryLoading && <p className="text-muted-foreground py-4">Loading netflow data...</p>}
-            {renderError(summaryError, "netflow data")}
-            {!isSummaryLoading && !summaryError && (
-              <MonthlyMoneyTable data={financialSnapshotTableData} selectedMonth={selectedSummaryDetailMonth} onMonthChange={setSelectedSummaryDetailMonth} months={monthOptions} selectedYear={selectedSummaryYear} onYearChange={setSelectedSummaryYear} years={availableYears} />
-            )}
-          </div>
-        </div>
       </main>
       <TransactionDialog
         open={isTransactionDialogOpen}

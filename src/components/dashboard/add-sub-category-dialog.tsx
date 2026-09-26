@@ -77,7 +77,12 @@ export function AddSubCategoryDialog({
   const handleSubmit = async (values: AddSubCategoryFormValues) => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/categories/subcategory', {
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const subCategoryUrl = configuredDomain
+        ? new URL('/api/categories/subcategory', configuredDomain).toString()
+        : '/api/categories/subcategory';
+
+      const response = await fetch(subCategoryUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

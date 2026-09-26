@@ -61,7 +61,11 @@ export function AddCategoryDialog({ open, onOpenChange, onCategoryAdded }: AddCa
   const handleSubmit = async (values: AddCategoryFormValues) => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/categories', {
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const categoryUrl = configuredDomain
+        ? new URL('/api/categories', configuredDomain).toString()
+        : '/api/categories';
+      const response = await fetch(categoryUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),

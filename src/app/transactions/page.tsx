@@ -158,7 +158,34 @@ export default function TransactionsPage() {
     ...creditCards.map(card => ({ ...card, type: "Credit Card" as const }))
   ];
 
-  const filteredTransactions = transactions
+  const normalizeTransactionType = (type?: string): Transaction['type'] => {
+    const normalized = String(type || '').toLowerCase();
+    if (normalized === 'income') return 'Income';
+    if (normalized === 'expense') return 'Expense';
+    if (normalized === 'investment') return 'Investment';
+    if (normalized === 'transfer') return 'Transfer';
+    if (normalized === 'splitwise settlement' || normalized === 'splitwise_settlement') return 'Splitwise Settlement';
+    return 'Expense';
+  };
+
+  const safeNumber = (value: unknown) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+  };
+
+  const normalizedTransactions = transactions.map((transaction) => ({
+    ...transaction,
+    amount: safeNumber(transaction.amount),
+    type: normalizeTransactionType(transaction.type),
+    splitwiseDetails: Array.isArray(transaction.splitwiseDetails)
+      ? transaction.splitwiseDetails.map((detail) => ({
+          ...detail,
+          splitAmount: safeNumber(detail.splitAmount),
+        }))
+      : [],
+  }));
+
+  const filteredTransactions = normalizedTransactions
     .filter(tx => typeFilter === 'All' || tx.type === typeFilter)
     .filter(tx => accountFilter === 'All' || tx.accountId === accountFilter)
     .filter(tx => categoryFilter === 'All' || tx.categoryId === categoryFilter);
@@ -189,9 +216,17 @@ export default function TransactionsPage() {
 
   const fetchCategories = async () => {
     try {
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const expUrl = configuredDomain
+        ? new URL('/api/categories?type=expense', configuredDomain).toString()
+        : '/api/categories?type=expense';
+      const incUrl = configuredDomain
+        ? new URL('/api/categories?type=income', configuredDomain).toString()
+        : '/api/categories?type=income';
+
       const [expRes, incRes] = await Promise.all([
-        fetch('/api/categories?type=expense'),
-        fetch('/api/categories?type=income'),
+        fetch(expUrl),
+        fetch(incUrl),
       ]);
       const expData = await expRes.json();
       const incData = await incRes.json();
@@ -263,8 +298,16 @@ export default function TransactionsPage() {
       setSelectedIds(new Set());
     }
     try {
-      const offset = loadMore ? transactions.length : 0;
-      const res = await fetch(`/api/all-transactions?limit=50&offset=${offset}`);
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      if (!configuredDomain) {
+        return;
+      }
+
+      const url = new URL('/api/transactions', configuredDomain);
+      url.searchParams.set('month', 'sep');
+      url.searchParams.set('year', String(new Date().getFullYear()));
+
+      const res = await fetch(url.toString());
       const data = await res.json();
       if (res.ok) {
         setTransactions((current) => loadMore
@@ -309,10 +352,14 @@ export default function TransactionsPage() {
     if (selectedIds.size === 0) return;
     setIsBulkDeleting(true);
     try {
-      const res = await fetch('/api/all-transactions', {
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const deleteUrl = configuredDomain
+        ? new URL('/api/delete-transactions', configuredDomain).toString()
+        : '/api/delete-transactions';
+      const res = await fetch(deleteUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'bulk-delete', ids: Array.from(selectedIds).map(Number) }),
+        body: JSON.stringify({ ids: Array.from(selectedIds).map(Number) }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -341,7 +388,15 @@ export default function TransactionsPage() {
     if (!selectedTransaction) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`/api/all-transactions?id=${selectedTransaction.id}`, { method: 'DELETE' });
+      const configuredDomain = window.localStorage.getItem('finance-server-domain') || '';
+      const deleteUrl = configuredDomain
+        ? new URL('/api/delete-transactions', configuredDomain).toString()
+        : '/api/delete-transactions';
+      const res = await fetch(deleteUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [parseInt(selectedTransaction.id, 10)] }),
+      });
       const data = await res.json();
       if (res.ok) {
         toast({ title: "Success", description: "Transaction deleted successfully" });
@@ -600,7 +655,7 @@ export default function TransactionsPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right font-medium">
-                      ₹{transaction.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₹{safeNumber(transaction.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </TableCell>
                     <TableCell>
                       {transaction.splitwiseDetails && transaction.splitwiseDetails.length > 0 ? (
@@ -612,7 +667,7 @@ export default function TransactionsPage() {
                           {transaction.splitwiseDetails.map((detail, idx) => (
                             <div key={idx} className="flex items-center justify-between gap-2 text-xs">
                               <span className="text-muted-foreground truncate max-w-[80px]">{detail.friendName}</span>
-                              <span className="font-medium text-orange-600 whitespace-nowrap">₹{detail.splitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span className="font-medium text-orange-600 whitespace-nowrap">₹{safeNumber(detail.splitAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           ))}
                         </div>
