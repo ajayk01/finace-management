@@ -4,7 +4,7 @@ import { ChangeEvent, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, FileUp, Loader2, Sparkles, TableProperties } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
-import { createWorker } from "tesseract.js";
+import { createWorker, PSM } from "tesseract.js";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,7 +51,11 @@ interface RewardsProgramSummary {
 const DATE_REGEX = /(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9},?\s+\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})/g;
 const TRANSACTION_SKIP_PATTERNS = /(TOTAL AMOUNT DUE|MINIMUM DUE|DUE DATE|REWARD POINTS|REDEEM REWARDS|OPENING BALANCE|IMPORTANT INFORMATION|CARD CONTROL|PURCHASE INDICATOR|SET PIN|DOMESTIC TRANSACTION|INTERNATIONAL TRANSACTION|STATEMENT)/i;
 const TRANSACTIONS_API_URL = "http://192.168.1.4:8080/api/transactions";
-const STATEMENT_ACCOUNT_ID = "23";
+const DEFAULT_STATEMENT_ACCOUNT_ID = "23";
+const AXIS_STATEMENT_ACCOUNT_ID = "18";
+
+const getStatementAccountId = (rawText: string): string =>
+  /AXIS\s+BANK|AIRTEL\s+AXIS\s+BANK/i.test(rawText) ? AXIS_STATEMENT_ACCOUNT_ID : DEFAULT_STATEMENT_ACCOUNT_ID;
 
 const parseValidMoneyValue = (value: string): number | null => {
   const cleaned = value.replace(/[^0-9.,-]/g, "").trim();
@@ -188,9 +192,13 @@ const getLatestStatementTransactionDay = (transactions: ParsedTransaction[]): nu
 const getEarliestStatementTransactionDay = (transactions: ParsedTransaction[]): number =>
   Math.min(...transactions.map((transaction) => getTransactionDay(transaction.sourceDate)));
 
+const STATEMENT_DATE_TOLERANCE_IN_MILLISECONDS = 2 * 24 * 60 * 60 * 1000;
+
 const isWithinStatementWindow = (transaction: AccountTransaction, earliestStatementDate: number, latestStatementDate: number): boolean => {
   const accountTransactionDay = getTransactionDay(transaction.date);
-  return accountTransactionDay > 0 && accountTransactionDay >= earliestStatementDate && accountTransactionDay <= latestStatementDate;
+  return accountTransactionDay > 0
+    && accountTransactionDay >= earliestStatementDate - STATEMENT_DATE_TOLERANCE_IN_MILLISECONDS
+    && accountTransactionDay <= latestStatementDate + STATEMENT_DATE_TOLERANCE_IN_MILLISECONDS;
 };
 
 const formatFetchPeriod = ({ month, year }: { month: string; year: string }): string =>
@@ -521,6 +529,30 @@ const parseStatement = (rawText: string): ParsedTransaction[] => {
     }
   };
 
+  const parseAxisTransactions = () => {
+    const axisSection = rawText.match(/TRANSACTION DETAILS[\s\S]*?(?:\*{4}\s*END OF STATEMENT\s*\*{4}|CASHBACK DETAILS)/i)?.[0];
+    if (!axisSection) return;
+
+    const recordStarts = [...axisSection.matchAll(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g)];
+    for (let index = 0; index < recordStarts.length; index += 1) {
+      const recordStart = recordStarts[index];
+      const recordEnd = recordStarts[index + 1]?.index ?? axisSection.length;
+      const line = axisSection
+        .slice(recordStart.index, recordEnd)
+        .replace(/\*{4}\s*END OF STATEMENT\s*\*{4}/i, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const row = line.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(.+?)\s+([\d,]+\.\d{2})\s*(Dr|Cr)\s*$/i);
+      if (!row) continue;
+
+      const [, dateValue, detailsWithCategory, amountText, debitCredit] = row;
+      const description = detailsWithCategory.replace(/\s+[A-Z][A-Z &]+$/, "").trim();
+      const amount = parseAmount(amountText) * (debitCredit.toLowerCase() === "cr" ? -1 : 1);
+      addParsedRow(dateValue, description, amount, 0);
+    }
+  };
+
+  parseAxisTransactions();
   parseHdfcDomesticTransactions();
   if (results.length === 0) parseWrappedDomesticTransactions();
 
@@ -576,7 +608,9 @@ const parseStatement = (rawText: string): ParsedTransaction[] => {
     }
   }
 
-  return results;
+  return results
+    .sort((first, second) => getTransactionDay(first.sourceDate) - getTransactionDay(second.sourceDate) || first.order - second.order)
+    .map((transaction, order) => ({ ...transaction, order }));
 };
 
 const parseRewardsProgramSummary = (rawText: string): { rows: RewardsProgramSummary[]; total: number | null } => {
@@ -620,12 +654,21 @@ const parseRewardsProgramSummary = (rawText: string): { rows: RewardsProgramSumm
   return { rows, total };
 };
 
+const parseCashbackEarned = (rawText: string): number | null => {
+  const cashbackSection = rawText.match(/CASHBACK DETAILS[\s\S]{0,300}?(?:IMPORTANT MESSAGE|CONTACT US|Page\s*:\s*\d+)/i)?.[0];
+  if (!cashbackSection) return null;
+
+  const cashbackMatch = cashbackSection.match(/CASHBACK\s+EARNED\s+CASHBACK\s+CREDITED\s*([\d,]+(?:\.\d{1,2})?)/i);
+  return cashbackMatch ? parseAmount(cashbackMatch[1]) : null;
+};
+
 export default function StatementParserPage() {
   const [statementText, setStatementText] = useState("");
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [isParsingPdf, setIsParsingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [accountTransactions, setAccountTransactions] = useState<AccountTransaction[]>([]);
+  const [statementAccountId, setStatementAccountId] = useState(DEFAULT_STATEMENT_ACCOUNT_ID);
   const [isLoadingAccountTransactions, setIsLoadingAccountTransactions] = useState(false);
   const [accountTransactionsError, setAccountTransactionsError] = useState<string | null>(null);
   const [accountTransactionPeriods, setAccountTransactionPeriods] = useState<{ month: string; year: string }[]>([]);
@@ -637,6 +680,7 @@ export default function StatementParserPage() {
 
   const parsedTransactions = useMemo(() => parseStatement(statementText), [statementText]);
   const rewardsProgramSummary = useMemo(() => parseRewardsProgramSummary(statementText), [statementText]);
+  const cashbackEarned = useMemo(() => parseCashbackEarned(statementText), [statementText]);
   const visibleAccountTransactions = useMemo(() => {
     const earliestStatementDate = getEarliestStatementTransactionDay(parsedTransactions);
     const latestStatementDate = getLatestStatementTransactionDay(parsedTransactions);
@@ -649,8 +693,10 @@ export default function StatementParserPage() {
     [parsedTransactions, visibleAccountTransactions],
   );
   const totalRewards = parsedTransactions.reduce((sum, tx) => sum + tx.rewards, 0);
+  const pdfRewardsValue = cashbackEarned ?? totalRewards;
+  const pdfRewardsLabel = cashbackEarned !== null ? "Cashback earned" : "Base points";
   const totalAmount = parsedTransactions.reduce((sum, tx) => sum + Math.max(tx.amount, 0), 0);
-  const fetchAccountTransactions = async (transactions: ParsedTransaction[]) => {
+  const fetchAccountTransactions = async (transactions: ParsedTransaction[], accountId: string) => {
     const earliestStatementDate = getEarliestStatementTransactionDay(transactions);
     const latestStatementDate = getLatestStatementTransactionDay(transactions);
     const periodRequests = [...new Map(
@@ -678,7 +724,7 @@ export default function StatementParserPage() {
     try {
       const responses = await Promise.all(periodRequests.map(async ({ month, year }) => {
         const url = new URL(TRANSACTIONS_API_URL);
-        url.searchParams.set("accountId", STATEMENT_ACCOUNT_ID);
+        url.searchParams.set("accountId", accountId);
         url.searchParams.set("month", month);
         url.searchParams.set("year", year);
 
@@ -715,16 +761,24 @@ export default function StatementParserPage() {
       setAccountTransactions(statementTransactions);
 
       if (rewardsPeriod) {
-        const rewardsUrl = new URL(TRANSACTIONS_API_URL);
-        rewardsUrl.searchParams.set("accountId", STATEMENT_ACCOUNT_ID);
-        rewardsUrl.searchParams.set("month", rewardsPeriod.month);
-        rewardsUrl.searchParams.set("year", rewardsPeriod.year);
+        const existingRewardsResponse = periodRequests.findIndex(({ month, year }) =>
+          month === rewardsPeriod.month && year === rewardsPeriod.year,
+        );
+        const rewardsTransactions = existingRewardsResponse >= 0
+          ? responses[existingRewardsResponse]
+          : await (async () => {
+              const rewardsUrl = new URL(TRANSACTIONS_API_URL);
+              rewardsUrl.searchParams.set("accountId", accountId);
+              rewardsUrl.searchParams.set("month", rewardsPeriod.month);
+              rewardsUrl.searchParams.set("year", rewardsPeriod.year);
 
-        const rewardsResponse = await fetch(rewardsUrl.toString());
-        const rewardsData = await rewardsResponse.json();
-        if (!rewardsResponse.ok) throw new Error(rewardsData.error || "Failed to fetch account rewards");
+              const rewardsResponse = await fetch(rewardsUrl.toString());
+              const rewardsData = await rewardsResponse.json();
+              if (!rewardsResponse.ok) throw new Error(rewardsData.error || "Failed to fetch account rewards");
+              return rewardsData.transactions || [];
+            })();
 
-        const totalRewards = (rewardsData.transactions || []).reduce((sum: number, transaction: Record<string, unknown>) => {
+        const totalRewards = rewardsTransactions.reduce((sum: number, transaction: Record<string, unknown>) => {
           const rewards = Number(transaction.rewards ?? 0);
           return sum + (Number.isFinite(rewards) ? rewards : 0);
         }, 0);
@@ -751,6 +805,7 @@ export default function StatementParserPage() {
     setIsParsingPdf(true);
     setPdfError(null);
     setAccountTransactions([]);
+    setStatementAccountId(DEFAULT_STATEMENT_ACCOUNT_ID);
     setAccountTransactionsError(null);
     setAccountTransactionPeriods([]);
     setAccountRewardsPoints(null);
@@ -785,7 +840,69 @@ export default function StatementParserPage() {
             canvas.height = Math.ceil(viewport.height);
             await page.render({ canvas, canvasContext: context, viewport }).promise;
             const { data } = await worker.recognize(canvas, {}, { blocks: true });
-            extractedText += `${data.text || extractOcrRows(data.blocks, canvas.width)}\n---OCR PAGE---\n`;
+            const recoveredAxisRows: string[] = [];
+            const axisSupplementalRows: string[] = [];
+            let recoveredCashbackDetails = "";
+
+            if (/AXIS\s+BANK|AIRTEL\s+AXIS\s+BANK/i.test(data.text) && data.blocks) {
+              const amountWorker = await createWorker("eng");
+              await amountWorker.setParameters({
+                tessedit_char_whitelist: "0123456789.,DrCr",
+                tessedit_pageseg_mode: PSM.SINGLE_LINE,
+              });
+
+              try {
+                const axisLines = data.blocks
+                  .flatMap((block) => block.paragraphs)
+                  .flatMap((paragraph) => paragraph.lines)
+                  .filter((line) => /^\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(line.text.trim()))
+                  .map((line) => line);
+
+                for (const line of axisLines) {
+                  const lineText = line.text.trim();
+                  if (/[\d,]+\.\d{2}\s*(?:Dr|Cr)\b/i.test(lineText)) {
+                    axisSupplementalRows.push(lineText);
+                    continue;
+                  }
+
+                  const crop = document.createElement("canvas");
+                  const cropContext = crop.getContext("2d");
+                  if (!cropContext) continue;
+
+                  const cropX = Math.floor(canvas.width * 0.75);
+                  const cropY = Math.max(0, Math.floor(line.bbox.y0 - 8));
+                  crop.width = canvas.width - cropX;
+                  crop.height = Math.min(canvas.height - cropY, Math.ceil(line.bbox.y1 - line.bbox.y0 + 16));
+                  cropContext.drawImage(canvas, cropX, cropY, crop.width, crop.height, 0, 0, crop.width, crop.height);
+
+                  const { data: amountData } = await amountWorker.recognize(crop);
+                  const amountMatch = amountData.text.match(/([\d,]+\.\d{2})\s*(Dr|Cr)\b/i);
+                  if (amountMatch) recoveredAxisRows.push(`${lineText} ${amountMatch[1]} ${amountMatch[2]}`);
+                }
+
+                const ocrLines = data.blocks
+                  .flatMap((block) => block.paragraphs)
+                  .flatMap((paragraph) => paragraph.lines)
+                  .sort((first, second) => first.bbox.y0 - second.bbox.y0);
+                const cashbackHeader = ocrLines.findIndex((line) => /CASHBACK\s+EARNED\s+CASHBACK\s+CREDITED/i.test(line.text));
+                const cashbackValues = cashbackHeader >= 0
+                  ? ocrLines.slice(cashbackHeader + 1).find((line) => /[\d,]+\.\d{2}\s+[\d,]+\.\d{2}/.test(line.text))
+                  : undefined;
+                const cashbackMatch = cashbackValues?.text.match(/([\d,]+\.\d{2})\s+[\d,]+\.\d{2}/);
+                if (cashbackMatch) {
+                  recoveredCashbackDetails = `CASHBACK DETAILS\nCashback Earned Cashback Credited\n${cashbackMatch[1]} 0.00\nIMPORTANT MESSAGE`;
+                }
+              } finally {
+                await amountWorker.terminate();
+              }
+            }
+
+            const pageText = data.text || extractOcrRows(data.blocks, canvas.width);
+            const axisRows = [...axisSupplementalRows, ...recoveredAxisRows].join("\n");
+            const textWithAxisRecoveries = axisRows
+              ? pageText.replace(/(\*{4}\s*END OF STATEMENT\s*\*{4}|CASHBACK DETAILS)/i, `${axisRows}\n$1`)
+              : pageText;
+            extractedText += `${textWithAxisRecoveries}\n${recoveredCashbackDetails}\n---OCR PAGE---\n`;
           }
         } finally {
           await worker.terminate();
@@ -798,7 +915,9 @@ export default function StatementParserPage() {
       }
 
       setStatementText(cleanText);
-      await fetchAccountTransactions(parseStatement(cleanText));
+      const accountId = getStatementAccountId(cleanText);
+      setStatementAccountId(accountId);
+      await fetchAccountTransactions(parseStatement(cleanText), accountId);
     } catch (error) {
       console.error("PDF parsing failed", error);
       setPdfError(error instanceof Error ? error.message : "Unable to parse the PDF file.");
@@ -942,7 +1061,7 @@ export default function StatementParserPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <TableProperties className="h-5 w-5 text-primary" />
-                Account {STATEMENT_ACCOUNT_ID} transactions
+                Account {statementAccountId} transactions
               </CardTitle>
               {accountTransactionPeriods.length > 0 && (
                 <CardDescription>
@@ -999,9 +1118,9 @@ export default function StatementParserPage() {
           </Card>
         </div>
 
-        {(rewardsProgramSummary.rows.length > 0 || accountRewardsPeriod !== null) && (
+        {(rewardsProgramSummary.rows.length > 0 || cashbackEarned !== null || accountRewardsPeriod !== null) && (
           <div className="grid gap-6 xl:grid-cols-2">
-            {rewardsProgramSummary.rows.length > 0 && (
+            {(rewardsProgramSummary.rows.length > 0 || cashbackEarned !== null) && (
               <Card>
                 <CardHeader>
                   <CardTitle>PDF Rewards Program Points Summary</CardTitle>
@@ -1018,8 +1137,8 @@ export default function StatementParserPage() {
                     <TableBody>
                       <TableRow>
                         <TableCell>-</TableCell>
-                        <TableCell className="font-medium">Base points</TableCell>
-                        <TableCell className="text-right">{totalRewards}</TableCell>
+                        <TableCell className="font-medium">{pdfRewardsLabel}</TableCell>
+                        <TableCell className="text-right">{pdfRewardsValue}</TableCell>
                       </TableRow>
                       {rewardsProgramSummary.rows.map((row) => (
                         <TableRow key={`${row.serialNumber}-${row.program}`}>
@@ -1043,7 +1162,7 @@ export default function StatementParserPage() {
             {accountRewardsPeriod && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Account {STATEMENT_ACCOUNT_ID} Rewards Program Summary</CardTitle>
+                  <CardTitle>Account {statementAccountId} Rewards Program Summary</CardTitle>
                   <CardDescription>
                     Rewards for {formatFetchPeriod(accountRewardsPeriod)}
                   </CardDescription>
