@@ -190,6 +190,7 @@ export function DashboardHeader({
                     <DropdownMenuItem onClick={() => setIsAddSubCategoryOpen(true)}>Add Sub-Category</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setIsAddCapOpen(true)}>Add Cap</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => router.push('/splitwise')}>Splitwise</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push('/statement-parser')}>Statement Parser</DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => router.push('/transactions')}>Get All Transactions</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setIsUnauditedExpenseOpen(true)}>Unaudited Expense</DropdownMenuItem>
