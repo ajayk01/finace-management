@@ -24,6 +24,8 @@ const ACCOUNT_MAP: Record<string, { id: number; name: string }> =
   '1238': { id: 22, name: 'SBI Pulse CC' },
   '4674': { id: 23, name: 'HDFC PhonePe Ultimo' },
   '6282': { id: 27, name: 'HSBC CC' },
+  '9639': { id: 30, name: 'HDFC CC Regalia Gold' },
+  '4518': { id: 4, name: 'Canara Bank' },
 };
 
 // ---------------------------------------------------------------------------
@@ -215,6 +217,22 @@ const parseHSBCCard: TransactionParser = (text) => {
 };
 
 /**
+ * Canara Bank - UPI/IMPS debit alerts.
+ * "An amount of INR 100.00 has been DEBITED on 13/11/26 from your account XXXX4518 to K AJAY with UPI Ref No.:668362693445."
+ */
+const parseCanaraBank: TransactionParser = (text) => {
+  const pattern = /An amount of\s+INR\s+([\d,]+(?:\.\d{1,2})?)\s+has been DEBITED on\s+\d{2}\/\d{2}\/\d{2}\s+from your account\s+X+(\d{4})\s+to\s+(.+?)\s+with UPI Ref No\.?\s*:?\s*(\d{6,})?/i;
+  const m = text.match(pattern);
+  if (!m) return null;
+  const merchant = m[3]?.trim() || '';
+  return {
+    amount: parseFloat(m[1].replace(/,/g, '')),
+    accountLast4: m[2],
+    description: m[4] ? `${merchant} | UPI Ref: ${m[4]}` : merchant,
+  };
+};
+
+/**
  * Registry: fromAddress substring → list of parsers to try (in order).
  * The first parser that returns a result wins.
  * Key is matched case-insensitively against the fromAddress.
@@ -225,6 +243,7 @@ const SENDER_PARSERS: { match: string; parsers: TransactionParser[] }[] = [
   { match: 'axis',      parsers: [parseAxisBank] },
   { match: 'sbicard',   parsers: [parseSBICard] },
   { match: 'hsbc',      parsers: [parseHSBCCard] },
+  { match: 'canarabank', parsers: [parseCanaraBank] },
 ];
 
 /**
